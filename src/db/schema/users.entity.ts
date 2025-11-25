@@ -18,10 +18,13 @@ export const users = pgTable("user", {
     unique("user_email_unique").on(table.email),
 ]);
 
-export const userRelations = relations(users, ({ many }) => ({
+export const userRelations = relations(users, ({ many, one }) => ({
     accounts: many(accounts),
     messages: many(messages),
-    profiles: many(profile),
+    profile: one(profile, {
+        fields: [users.id],
+        references: [profile.userId],
+    }),
     sessions: many(sessions),
     channelMembers: many(channelMembers),
 }));

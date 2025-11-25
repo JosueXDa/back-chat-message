@@ -50,6 +50,13 @@
       "when": 1764022876646,
       "tag": "0006_steady_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1764034523344,
+      "tag": "0007_wooden_the_stranger",
+      "breakpoints": true
     }
   ]
 }
