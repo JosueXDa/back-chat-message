@@ -6,7 +6,7 @@ import { profile } from "./profile.entity";
 import { sessions } from "./sessions.entity";
 import { channelMembers } from "./channel-members.entity";
 
-export const user = pgTable("user", {
+export const users = pgTable("user", {
     id: text().primaryKey().notNull(),
     email: text().notNull(),
     createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
@@ -18,7 +18,7 @@ export const user = pgTable("user", {
     unique("user_email_unique").on(table.email),
 ]);
 
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(users, ({ many }) => ({
     accounts: many(accounts),
     messages: many(messages),
     profiles: many(profile),
