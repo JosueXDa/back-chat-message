@@ -1,7 +1,14 @@
 import { z } from "zod";
-import { createUserSchema } from "./create-user.dto";
 
-const profileUpdateSchema = createUserSchema.shape.profile.partial();
+const profileUpdateSchema = z
+    .object({
+        displayName: z.string().min(1, "displayName is required"),
+        avatarUrl: z.string().url().optional().nullable(),
+        bio: z.string().max(500).optional().nullable(),
+        age: z.number().int().nonnegative().optional().nullable(),
+        isOnline: z.boolean().optional(),
+    })
+    .partial();
 
 const baseUpdateSchema = z.object({
     email: z.string().email().optional(),

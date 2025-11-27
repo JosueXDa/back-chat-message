@@ -5,6 +5,7 @@ import { messages } from "./messages.entity";
 import { profile } from "./profile.entity";
 import { sessions } from "./sessions.entity";
 import { channelMembers } from "./channel-members.entity";
+import { channels } from "./channels.entity";
 
 export const users = pgTable("user", {
     id: text().primaryKey().notNull(),
@@ -27,4 +28,5 @@ export const userRelations = relations(users, ({ many, one }) => ({
     }),
     sessions: many(sessions),
     channelMembers: many(channelMembers),
+    ownedChannels: many(channels),
 }));

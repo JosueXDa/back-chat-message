@@ -1,6 +1,5 @@
 import { profile as profiles } from "../../../db/schema/profile.entity";
 import { users } from "../../../db/schema/users.entity";
-import { CreateUserDto } from "../dtos/create-user.dto";
 import { UpdateUserDto } from "../dtos/update-user.dto";
 import { UserRepository, UserRow } from "../repositories/user.repository";
 
@@ -19,11 +18,6 @@ export class UserService {
     async getUserById(id: string): Promise<UserWithProfile | null> {
         const row = await this.userRepository.findById(id);
         return row ? this.mapRow(row) : null;
-    }
-
-    async createUser(data: CreateUserDto): Promise<UserWithProfile> {
-        const row = await this.userRepository.create(data);
-        return this.mapRow(row);
     }
 
     async updateUser(id: string, data: UpdateUserDto): Promise<UserWithProfile | null> {

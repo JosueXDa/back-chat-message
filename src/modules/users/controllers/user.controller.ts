@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { createUserSchema } from "../dtos/create-user.dto";
 import { updateUserSchema } from "../dtos/update-user.dto";
 import { UserService } from "../services/user.service";
 
@@ -26,26 +25,6 @@ export class UserController {
             }
 
             return c.json(user);
-        });
-
-        this.router.post("/", async (c) => {
-            let rawBody: unknown;
-            try {
-                rawBody = await c.req.json();
-            } catch {
-                return c.json({ message: "Invalid JSON body" }, 400);
-            }
-
-            const parsed = createUserSchema.safeParse(rawBody);
-            if (!parsed.success) {
-                return c.json({
-                    message: "Validation failed",
-                    errors: parsed.error.flatten(),
-                }, 400);
-            }
-
-            const user = await this.userService.createUser(parsed.data);
-            return c.json(user, 201);
         });
 
         this.router.patch("/:id", async (c) => {

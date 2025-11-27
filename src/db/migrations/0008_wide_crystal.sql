@@ -1,0 +1,2 @@
+ALTER TABLE "channels" ADD COLUMN "owner_id" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "channels" ADD CONSTRAINT "channels_owner_id_user_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;
