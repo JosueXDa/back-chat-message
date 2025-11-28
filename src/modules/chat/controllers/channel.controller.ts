@@ -1,49 +1,96 @@
 import { Hono } from "hono";
 import { ChannelService } from "../services/channel.service";
+import { auth as authType } from "../../../lib/auth";
+
+type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
+
+type Variables = {
+    session: SessionContext;
+};
 
 export class ChannelController {
-    public readonly router: Hono;
+    public readonly router: Hono<{ Variables: Variables }>;
 
-    constructor(private readonly channelService: ChannelService) {
-        this.router = new Hono();
+    constructor(private readonly channelService: ChannelService,
+        private readonly auth: typeof authType
+    ) {
+        this.router = new Hono<{ Variables: Variables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
+        // middleware de autenticacion
+        const authMiddleware = async (c: any, next: any) => {
+            const session = await this.auth.api.getSession({
+                headers: c.req.raw.headers,
+            });
+            if (!session) {
+                return c.json({
+                    error: "Unauthorized"
+                }, 401);
+            }
+            c.set("session", session);
+            await next();
+        };
+
         this.router.get("/", async (c) => {
-            const channels = await this.channelService.getAllChannels();
-            return c.json(channels);
+            try {
+                const channels = await this.channelService.getAllChannels();
+                return c.json(channels);
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
+            }
         });
 
         this.router.get("/:id", async (c) => {
-            const id = c.req.param("id");
-            const channel = await this.channelService.getChannelById(id);
-            return c.json(channel);
-        });
-
-        this.router.post("/", async (c) => {
-            const data = await c.req.json();
-            const channel = await this.channelService.createChannel(data);
-            return c.json(channel);
-        });
-
-        this.router.patch("/:id", async (c) => {
-            const id = c.req.param("id");
-            const data = await c.req.json();
-            const channel = await this.channelService.updateChannel(id, data);
-            if (!channel) {
-                return c.json({ message: "Channel not found" }, 404);
+            try {
+                const id = c.req.param("id");
+                const channel = await this.channelService.getChannelById(id);
+                return c.json(channel);
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
             }
-            return c.json(channel);
         });
 
-        this.router.delete("/:id", async (c) => {
-            const id = c.req.param("id");
-            const deleted = await this.channelService.deleteChannel(id);
-            if (!deleted) {
-                return c.json({ message: "Channel not found" }, 404);
+        this.router.post("/", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const data = await c.req.json();
+                const channel = await this.channelService.createChannel({
+                    ...data,
+                    ownerId: session.user.id,
+                });
+                return c.json(channel);
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
             }
-            return c.json({ message: "Channel deleted" });
+        });
+
+        this.router.patch("/:id", authMiddleware, async (c) => {
+            try {
+                const id = c.req.param("id");
+                const data = await c.req.json();
+                const channel = await this.channelService.updateChannel(id, data);
+                if (!channel) {
+                    return c.json({ message: "Channel not found" }, 404);
+                }
+                return c.json(channel);
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
+            }
+        });
+
+        this.router.delete("/:id", authMiddleware, async (c) => {
+            try {
+                const id = c.req.param("id");
+                const deleted = await this.channelService.deleteChannel(id);
+                if (!deleted) {
+                    return c.json({ message: "Channel not found" }, 404);
+                }
+                return c.json({ message: "Channel deleted" });
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
+            }
         });
     }
 }

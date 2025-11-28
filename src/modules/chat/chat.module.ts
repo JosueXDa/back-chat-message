@@ -1,11 +1,13 @@
 import { ChannelRepository } from "./repositories/channel.repository";
 import { ChannelService } from "./services/channel.service";
 import { ChannelController } from "./controllers/channel.controller";
+import { auth } from "../../lib/auth";
 
 type ChatModuleOptions = {
     repository?: ChannelRepository;
     service?: ChannelService;
     controller?: ChannelController;
+    auth?: typeof auth;
 }
 
 export class ChatModule {
@@ -14,7 +16,8 @@ export class ChatModule {
     constructor(options: ChatModuleOptions = {}) {
         const repository = options.repository ?? new ChannelRepository();
         const service = options.service ?? new ChannelService(repository);
-        this.controller = options.controller ?? new ChannelController(service);
+        const injectedAuth = options.auth ?? auth; // usar el inyectado o el default
+        this.controller = options.controller ?? new ChannelController(service, injectedAuth);
     }
 
     get router() {
