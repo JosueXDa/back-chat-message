@@ -12,6 +12,7 @@ export const createChannelSchema = z.object({
     description: z.string().max(500).optional().nullable(),
     isPrivate: z.boolean().optional().default(false),
     memberIds: memberIdsSchema,
+    ownerId: z.string().min(1, "owner id is required"),
 });
 
 export type CreateChannelDto = z.infer<typeof createChannelSchema>;

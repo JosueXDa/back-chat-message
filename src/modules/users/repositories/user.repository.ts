@@ -11,7 +11,7 @@ export type UserRow = {
 
 export class UserRepository {
     async findAll(): Promise<UserRow[]> {
-        return db
+        return await db
             .select({ user: users, profile: profiles })
             .from(users)
             .leftJoin(profiles, eq(profiles.userId, users.id));
