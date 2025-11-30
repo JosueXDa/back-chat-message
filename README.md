@@ -38,42 +38,67 @@ src/
 
 ```mermaid
 graph TD
-    A[Cliente HTTP / Front-end] -->|REST| B[Hono App (/src/index.ts)]
-    A -->|WebSocket| I[ChatGateway (/ws)]
-    B --> C[Better Auth Router /api/auth/*]
-    B --> D[UsersModule]
-    D --> E[UserService]
-    E --> F[UserRepository]
-    C --> G[Drizzle Adapter]
-    F --> H[(PostgreSQL/Neon)]
-    G --> H
-    I --> J[MessageService]
-    J --> K[MessageRepository]
-    K --> H
-```
+    %% Definición de estilos para que sea visualmente claro
+    classDef client fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef entry fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    classDef logic fill:#e0f2f1,stroke:#00695c,stroke-width:1px;
+    classDef data fill:#fbe9e7,stroke:#d84315,stroke-width:1px;
+    classDef db fill:#263238,stroke:#eceff1,stroke-width:2px,color:#fff;
 
-## Diagrama de secuencia (PATCH /api/users/:id)
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Client
-    participant API as Hono Controller
-    participant Service as UserService
-    participant Repo as UserRepository
-    participant DB as PostgreSQL
+    A[Cliente HTTP / Front-end]:::client
+    H[(PostgreSQL/Neon)]:::db
 
-    Client->>API: PATCH /api/users/:id (JSON)
-    API->>API: Validación zod (updateUserSchema)
-    API->>Service: updateUser(id, dto)
-    Service->>Repo: findById(id)
-    Repo->>DB: SELECT user LEFT JOIN profile
-    DB-->>Repo: Row
-    Service->>Repo: update(id, dto)
-    Repo->>DB: UPDATE user/profile
-    DB-->>Repo: Updated row
-    Repo-->>Service: Row + profile
-    Service-->>API: UserWithProfile
-    API-->>Client: 200 JSON | 404 if not found
+    subgraph "Server (Hono)"
+        B[Hono App]:::entry
+        
+        subgraph "Auth Module"
+            C[Better Auth Router]:::entry
+            G[Drizzle Adapter]:::data
+        end
+
+        subgraph "Users Module"
+            D[UsersModule/Controller]:::entry
+            E[UserService]:::logic
+            F[UserRepository]:::data
+        end
+
+        subgraph "Chat Module"
+            I[ChatGateway WS]:::entry
+            L[ChatModule/Controller]:::entry
+            
+            subgraph Services
+                J[MessageService]:::logic
+                M[ChannelService]:::logic
+                O[ChannelMemberService]:::logic
+            end
+
+            subgraph Repositories
+                K[MessageRepository]:::data
+                N[ChannelRepository]:::data
+                P[ChannelMemberRepository]:::data
+            end
+        end
+    end
+
+    %% Conexiones
+    A -->|REST| B
+    A -->|WebSocket| B
+    
+    %% Rutas desde Hono
+    B --> C
+    B --> D
+    B --> I
+    B --> L
+
+    %% Conexiones Internas
+    C --> G
+    D --> E --> F
+    I --> J --> K
+    L --> M --> N
+    L --> O --> P
+
+    %% Conexiones a DB
+    G & F & K & N & P --> H
 ```
 
 ## Instalación y ejecución
