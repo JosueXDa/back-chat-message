@@ -10,7 +10,7 @@ Backend modular para una aplicación de mensajería en tiempo (casi) real constr
 ## Características clave
 1. **Autenticación Better Auth** expuesta mediante `/api/auth/*` y persistida en PostgreSQL.
 2. **Gestión de usuarios + perfiles** con validaciones `zod` y capa `service/repository` (@src/modules/users/controllers/user.controller.ts#13-67).
-3. **Infraestructura lista para canales y mensajes**, con esquemas Drizzle ya definidos (@src/db/schema/messages.entity.ts#1-23).
+3. **Infraestructura de Chat en Tiempo Real** con WebSockets (Bun native), canales y mensajes persistidos (@src/modules/chat/gateway/chat.gateway.ts).
 4. **Stack totalmente tipado** con TypeScript y Bun + TSX para DX rápida.
 
 ## Stack tecnológico
@@ -31,12 +31,15 @@ src/
 ├─ db/                      # Configuración Drizzle + esquemas
 └─ modules/
    ├─ users/                # Controller → Service → Repository
-   └─ chat/ (en progreso)   # DTOs de canales
+   └─ chat/                 # Gateway (WS) + Controllers + Services
+      ├─ gateway/           # Lógica WebSocket
+      └─ ...
 ```
 
 ```mermaid
 graph TD
     A[Cliente HTTP / Front-end] -->|REST| B[Hono App (/src/index.ts)]
+    A -->|WebSocket| I[ChatGateway (/ws)]
     B --> C[Better Auth Router /api/auth/*]
     B --> D[UsersModule]
     D --> E[UserService]
@@ -44,6 +47,9 @@ graph TD
     C --> G[Drizzle Adapter]
     F --> H[(PostgreSQL/Neon)]
     G --> H
+    I --> J[MessageService]
+    J --> K[MessageRepository]
+    K --> H
 ```
 
 ## Diagrama de secuencia (PATCH /api/users/:id)
@@ -130,6 +136,33 @@ profile?: {
 ```
 Si no se envía ningún campo, la API responde `400` con mensaje `Provide at least one property to update`.
 
+### Chat (`/api/chats`)
+
+#### Canales (`/api/chats/channels`)
+| Método | Ruta | Body | Respuesta exitosa | Descripción |
+| --- | --- | --- | --- | --- |
+| GET | `/api/chats/channels` | — | `200 Channel[]` | Lista todos los canales disponibles.
+| GET | `/api/chats/channels/:id` | — | `200 Channel` | Obtiene detalles de un canal específico.
+| POST | `/api/chats/channels` | `CreateChannelDto` | `200 Channel` | Crea un nuevo canal. Requiere autenticación.
+| PATCH | `/api/chats/channels/:id` | `UpdateChannelDto` | `200 Channel` | Actualiza un canal existente. Requiere autenticación.
+| DELETE | `/api/chats/channels/:id` | — | `200 { message: "Channel deleted" }` | Elimina un canal. Requiere autenticación.
+
+**Esquema `CreateChannelDto`**:
+```ts
+name: string (min 1, max 100)
+description?: string | null (max 500)
+isPrivate?: boolean (default false)
+memberIds?: string[] (optional, unique)
+ownerId?: string (optional)
+```
+
+#### Miembros (`/api/chats/members`)
+| Método | Ruta | Body | Respuesta exitosa | Descripción |
+| --- | --- | --- | --- | --- |
+| GET | `/api/chats/members/:channelId` | — | `200 ChannelMember[]` | Lista los miembros de un canal.
+| POST | `/api/chats/members` | `{ channelId: string }` | `200 ChannelMember` | El usuario autenticado se une al canal especificado.
+| DELETE | `/api/chats/members/:channelId` | — | `200 { message: "Member deleted" }` | El usuario autenticado sale del canal especificado.
+
 ### Estados HTTP esperados
 - `200 OK`: Operación exitosa.
 - `201 Created`: (reservado para futuros endpoints de creación).
@@ -137,7 +170,18 @@ Si no se envía ningún campo, la API responde `400` con mensaje `Provide at lea
 - `404 Not Found`: Usuario inexistente.
 - `500 Internal Server Error`: Error inesperado (consultar logs de Bun/Hono).
 
+### WebSockets (`/ws`)
+- **Ruta**: `/ws`
+- **Autenticación**: Requiere cookie de sesión válida de Better Auth.
+- **Eventos**:
+  - `SEND_MESSAGE`: Cliente envía mensaje.
+    ```json
+    { "type": "SEND_MESSAGE", "payload": { "channelId": "...", "content": "..." } }
+    ```
+  - `NEW_MESSAGE`: Servidor notifica nuevo mensaje.
+
 ## Próximos pasos sugeridos
-- Completar los controladores/repositorios del módulo `chat` para canales y mensajes.
+- Integrar cliente Frontend con WebSockets.
+- Añadir eventos de "Escribiendo..." y confirmación de lectura.
 - Añadir pruebas automatizadas para `UserService`.
 - Documentar scripts específicos de despliegue (Docker, CI/CD) cuando estén disponibles.
