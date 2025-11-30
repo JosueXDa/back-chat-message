@@ -19,6 +19,6 @@ const customChatModule = new ChatModule({
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route('/api/users', usersModule.router);
-app.route('/api/channels', customChatModule.router);
+app.route('/api/chats', customChatModule.router);
 
 export default app

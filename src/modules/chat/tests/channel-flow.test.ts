@@ -52,7 +52,7 @@ describe("Chat Module - Channel Flow", () => {
     it("should create a channel", async () => {
         if (!sessionCookie) throw new Error("No session cookie found");
 
-        const res = await app.request("/api/channels", {
+        const res = await app.request("/api/chats/channels", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -76,7 +76,7 @@ describe("Chat Module - Channel Flow", () => {
         // For now, we'll check if we can fetch the channel we just created.
         if (!channelId || !sessionCookie) throw new Error("Missing channelId or sessionCookie");
 
-        const res = await app.request(`/api/channels/${channelId}`, {
+        const res = await app.request(`/api/chats/channels/${channelId}`, {
             method: "GET",
             headers: {
                 "Cookie": sessionCookie,
@@ -94,7 +94,7 @@ describe("Chat Module - Channel Flow", () => {
     it("should delete the channel", async () => {
         if (!channelId || !sessionCookie) throw new Error("Missing channelId or sessionCookie");
 
-        const res = await app.request(`/api/channels/${channelId}`, {
+        const res = await app.request(`/api/chats/channels/${channelId}`, {
             method: "DELETE",
             headers: {
                 "Cookie": sessionCookie,
@@ -104,7 +104,7 @@ describe("Chat Module - Channel Flow", () => {
         expect(res.status).toBe(200);
 
         // Verify it's gone
-        const checkRes = await app.request(`/api/channels/${channelId}`, {
+        const checkRes = await app.request(`/api/chats/channels/${channelId}`, {
             method: "GET",
             headers: {
                 "Cookie": sessionCookie,

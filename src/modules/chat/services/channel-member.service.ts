@@ -1,0 +1,34 @@
+import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import { CreateMemberChannelDto } from "../dtos/create-member-cahnnel.dto";
+import { ChannelMemberRow } from "../repositories/channel-member.repository";
+
+export class ChannelMemberService {
+    constructor(private readonly channelMemberRepository: ChannelMemberRepository) { }
+
+    async createMember(data: CreateMemberChannelDto): Promise<ChannelMemberRow> {
+        try {
+            return await this.channelMemberRepository.create(data);
+        } catch (error) {
+            console.error("Error in service creating channel member:", error);
+            throw error;
+        }
+    }
+
+    async deleteMember(channelId: string, userId: string): Promise<ChannelMemberRow | undefined> {
+        try {
+            return await this.channelMemberRepository.delete(channelId, userId);
+        } catch (error) {
+            console.error(`Error in service deleting channel member ${channelId} for user ${userId}:`, error);
+            throw error;
+        }
+    }
+
+    async getMembersByChannelId(channelId: string): Promise<ChannelMemberRow[]> {
+        try {
+            return await this.channelMemberRepository.getMembersByChannelId(channelId);
+        } catch (error) {
+            console.error(`Error in service getting members by channel id ${channelId}:`, error);
+            throw error;
+        }
+    }
+}
