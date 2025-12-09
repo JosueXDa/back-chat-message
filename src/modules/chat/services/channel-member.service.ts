@@ -31,4 +31,13 @@ export class ChannelMemberService {
             throw error;
         }
     }
+
+    async getChannelsByUserId(userId: string) {
+        try {
+            return await this.channelMemberRepository.getChannelsByUserId(userId);
+        } catch (error) {
+            console.error(`Error in service getting channels by user id ${userId}:`, error);
+            throw error;
+        }
+    }
 }

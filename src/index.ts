@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { createBunWebSocket } from 'hono/bun'
 import type { ServerWebSocket } from 'bun'
 import 'dotenv/config'
@@ -14,7 +15,17 @@ import { ChannelMemberRepository } from './modules/chat/repositories/channel-mem
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket<{ user: any }>>()
 
-const app = new Hono()
+export const app = new Hono()
+
+
+app.use('/api/*', cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 600,
+  credentials: true,
+}))
 
 app.get('/api', (c) => {
   return c.text('Hello Hono!')

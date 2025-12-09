@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import app from "../../../index";
+import { app } from "../../../index";
 
 const USER_A = {
     email: `user-a-${Date.now()}@example.com`,
@@ -102,6 +102,25 @@ describe("Chat Module - Member Flow", () => {
         expect(data.member).toBeTruthy();
         expect(data.member.channelId).toBe(channelId);
         // Verify userId matches User B (we'd need to fetch user B's ID to be sure, but success implies it worked)
+    });
+
+    // 6.5 Verify User B can see the joined channel
+    it("should allow User B to see joined channels", async () => {
+        if (!sessionCookieB || !channelId) throw new Error("Missing session B or channelId");
+
+        const res = await app.request("/api/chats/members/joined", {
+            method: "GET",
+            headers: {
+                "Cookie": sessionCookieB,
+            },
+        });
+
+        expect(res.status).toBe(200);
+        const channels = await res.json();
+        expect(Array.isArray(channels)).toBe(true);
+        expect(channels.length).toBeGreaterThanOrEqual(1);
+        const joinedChannel = channels.find((c: any) => c.id === channelId);
+        expect(joinedChannel).toBeTruthy();
     });
 
     // 7. Verify User B is a member

@@ -33,6 +33,16 @@ export class ChannelMemberController {
             await next();
         };
 
+        this.router.get("/joined", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const channels = await this.channelMemberService.getChannelsByUserId(session.user.id);
+                return c.json(channels);
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
+            }
+        });
+
         this.router.get("/:id", authMiddleware, async (c) => {
             try {
                 const members = await this.channelMemberService.getMembersByChannelId(c.req.param("id"));

@@ -185,6 +185,7 @@ ownerId?: string (optional)
 | Método | Ruta | Body | Respuesta exitosa | Descripción |
 | --- | --- | --- | --- | --- |
 | GET | `/api/chats/members/:channelId` | — | `200 ChannelMember[]` | Lista los miembros de un canal.
+| GET | `/api/chats/members/joined` | — | `200 Channel[]` | Lista los canales a los que el usuario autenticado se ha unido.
 | POST | `/api/chats/members` | `{ channelId: string }` | `200 ChannelMember` | El usuario autenticado se une al canal especificado.
 | DELETE | `/api/chats/members/:channelId` | — | `200 { message: "Member deleted" }` | El usuario autenticado sale del canal especificado.
 

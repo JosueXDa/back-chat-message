@@ -8,7 +8,7 @@ export type UserWithProfile = typeof users.$inferSelect & {
 };
 
 export class UserService {
-    constructor(private readonly userRepository: UserRepository) {}
+    constructor(private readonly userRepository: UserRepository) { }
 
     async getUsers(): Promise<UserWithProfile[]> {
         const rows = await this.userRepository.findAll();

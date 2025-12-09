@@ -1,5 +1,6 @@
 import { db } from "../../../db/index";
 import { channelMembers } from "../../../db/schema/channel-members.entity";
+import { channels } from "../../../db/schema/channels.entity";
 import { eq, and } from "drizzle-orm";
 import { CreateMemberChannelDto } from "../dtos/create-member-cahnnel.dto";
 
@@ -45,6 +46,22 @@ export class ChannelMemberRepository {
             return await db.select({ member: channelMembers }).from(channelMembers).where(eq(channelMembers.channelId, channelId));
         } catch (error) {
             console.error(`Error getting members by channel id ${channelId}:`, error);
+            throw error;
+        }
+    }
+
+    async getChannelsByUserId(userId: string) {
+        try {
+            const result = await db.select({
+                channel: channels
+            })
+                .from(channelMembers)
+                .innerJoin(channels, eq(channelMembers.channelId, channels.id))
+                .where(eq(channelMembers.userId, userId));
+
+            return result.map(r => r.channel);
+        } catch (error) {
+            console.error(`Error getting channels by user id ${userId}:`, error);
             throw error;
         }
     }
