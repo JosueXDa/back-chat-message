@@ -33,16 +33,19 @@ export class ChannelController {
             await next();
         };
 
-        this.router.get("/", async (c) => {
+        this.router.get("/", authMiddleware, async (c) => {
             try {
-                const channels = await this.channelService.getAllChannels();
-                return c.json(channels);
+                const page = Number(c.req.query("page") || 1);
+                const limit = Number(c.req.query("limit") || 10);
+
+                const result = await this.channelService.getAllChannels(page, limit);
+                return c.json(result);
             } catch (error) {
                 return c.json({ error: "Internal Server Error" }, 500);
             }
         });
 
-        this.router.get("/:id", async (c) => {
+        this.router.get("/:id", authMiddleware, async (c) => {
             try {
                 const id = c.req.param("id");
                 const channel = await this.channelService.getChannelById(id);

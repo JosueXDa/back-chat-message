@@ -40,10 +40,18 @@ export const auth = betterAuth({
         },
     },
 
-    trustedOrigins: ['http://localhost:3000'],
+    trustedOrigins: ['http://localhost:3000', 'http://192.168.18.8:8081', 'http://localhost:8081'],
 
     emailAndPassword: {
         enabled: true,
         minPasswordLength: 8,
+    },
+
+    socialProviders: {
+        github: {
+            enabled: true,
+            clientId: process.env.GITHUB_CLIENT_ID as string,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET as string,
+        }
     },
 });

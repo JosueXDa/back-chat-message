@@ -19,9 +19,23 @@ export class ChannelService {
         }
     }
 
-    async getAllChannels(): Promise<ChannelRow[]> {
+    async getAllChannels(page: number = 1, limit: number = 10): Promise<{
+        data: ChannelRow[];
+        meta: { total: number; page: number; limit: number; totalPages: number }
+    }> {
         try {
-            return await this.channelRepository.findAll();
+            const { data, total } = await this.channelRepository.findAll(page, limit);
+            const totalPages = Math.ceil(total / limit);
+
+            return {
+                data,
+                meta: {
+                    total,
+                    page,
+                    limit,
+                    totalPages
+                }
+            };
         } catch (error) {
             console.error("Error in service getting all channels:", error);
             throw error;

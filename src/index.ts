@@ -19,7 +19,7 @@ export const app = new Hono()
 
 
 app.use('/api/*', cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:8081',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   exposeHeaders: ['Content-Length'],
@@ -33,8 +33,8 @@ app.get('/api', (c) => {
 
 // Dependency Injection for WebSocket
 const messageRepository = new MessageRepository();
-const messageService = new MessageService(messageRepository);
 const channelMemberRepository = new ChannelMemberRepository();
+const messageService = new MessageService(messageRepository);
 const channelMemberService = new ChannelMemberService(channelMemberRepository);
 const connectionManager = new ConnectionManager();
 
@@ -86,6 +86,8 @@ app.get(
 )
 
 export default {
+  port: 3000,
+  hostname: 'localhost',
   fetch: app.fetch,
   websocket
 }

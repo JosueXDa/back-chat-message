@@ -4,6 +4,7 @@ const updateBaseSchema = z.object({
     name: z.string().min(1, "name is required").max(100, "name must have at most 100 characters").optional(),
     description: z.string().max(500).optional().nullable(),
     isPrivate: z.boolean().optional().default(false),
+    category: z.string().min(1, "category is required").max(50, "category must have at most 50 characters").optional().default("General"),
 });
 
 export const updateChannelSchema = updateBaseSchema.refine(

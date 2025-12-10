@@ -11,6 +11,7 @@ export const createChannelSchema = z.object({
     name: z.string().min(1, "name is required").max(100, "name must have at most 100 characters"),
     description: z.string().max(500).optional().nullable(),
     isPrivate: z.boolean().optional().default(false),
+    category: z.string().optional().default("General"),
     memberIds: memberIdsSchema.optional(),
     ownerId: z.string().optional(),
 });

@@ -166,7 +166,7 @@ Si no se envía ningún campo, la API responde `400` con mensaje `Provide at lea
 #### Canales (`/api/chats/channels`)
 | Método | Ruta | Body | Respuesta exitosa | Descripción |
 | --- | --- | --- | --- | --- |
-| GET | `/api/chats/channels` | — | `200 Channel[]` | Lista todos los canales disponibles.
+| GET | `/api/chats/channels` | `?page=1&limit=10` | `200 { data: Channel[], meta: ... }` | Lista canales con paginación.
 | GET | `/api/chats/channels/:id` | — | `200 Channel` | Obtiene detalles de un canal específico.
 | POST | `/api/chats/channels` | `CreateChannelDto` | `200 Channel` | Crea un nuevo canal. Requiere autenticación.
 | PATCH | `/api/chats/channels/:id` | `UpdateChannelDto` | `200 Channel` | Actualiza un canal existente. Requiere autenticación.
@@ -177,6 +177,7 @@ Si no se envía ningún campo, la API responde `400` con mensaje `Provide at lea
 name: string (min 1, max 100)
 description?: string | null (max 500)
 isPrivate?: boolean (default false)
+category?: string (default 'General')
 memberIds?: string[] (optional, unique)
 ownerId?: string (optional)
 ```

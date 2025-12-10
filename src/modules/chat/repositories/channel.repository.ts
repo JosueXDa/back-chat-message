@@ -1,7 +1,7 @@
 import { channels } from "../../../db/schema/channels.entity";
 import { channelMembers } from "../../../db/schema/channel-members.entity";
 import { db } from "../../../db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { CreateChannelDto } from "../dtos/create-channel.dto";
 import { UpdateChannelDto } from "../dtos/update-channel.dto";
 
@@ -20,6 +20,7 @@ export class ChannelRepository {
                 name: data.name,
                 description: data.description,
                 isPrivate: data.isPrivate,
+                category: data.category,
                 ownerId: data.ownerId,
             }).returning(); //devuelve todo el objeto despues de insertar
 
@@ -87,11 +88,23 @@ export class ChannelRepository {
         }
     }
 
-    async findAll(): Promise<ChannelRow[]> {
+
+
+    async findAll(page: number = 1, limit: number = 10): Promise<{ data: ChannelRow[], total: number }> {
         try {
-            return await db
-                .select({ channel: channels })
-                .from(channels);
+            const offset = (page - 1) * limit;
+
+            const [data, totalCount] = await Promise.all([
+                db.select({ channel: channels })
+                    .from(channels)
+                    .limit(limit)
+                    .offset(offset),
+                db.select({ count: sql<number>`count(*)` })
+                    .from(channels)
+                    .then(res => Number(res[0]?.count ?? 0))
+            ]);
+
+            return { data, total: totalCount };
         } catch (error) {
             console.error("Error finding all channels:", error);
             throw error;
