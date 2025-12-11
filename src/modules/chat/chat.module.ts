@@ -8,6 +8,7 @@ import { ChannelMemberRepository } from "./repositories/channel-member.repositor
 import { MessageRepository } from "./repositories/message.repository";
 import { MessageService } from "./services/message.service";
 import { MessageController } from "./controllers/message.controller";
+import { MessageEventEmitter } from "./services/message-event.emitter";
 
 import { auth } from "../../lib/auth";
 
@@ -21,6 +22,7 @@ type ChatModuleOptions = {
     repositoryMessage?: MessageRepository;
     serviceMessage?: MessageService;
     controllerMessage?: MessageController;
+    messageEventEmitter?: MessageEventEmitter;
     auth?: typeof auth;
 }
 
@@ -28,6 +30,7 @@ export class ChatModule {
     public readonly controller: ChannelController;
     public readonly controllerMember: ChannelMemberController;
     public readonly controllerMessage: MessageController;
+    public readonly messageEventEmitter: MessageEventEmitter;
 
     constructor(options: ChatModuleOptions = {}) {
         const injectedAuth = options.auth ?? auth; // usar el inyectado o el default
@@ -40,8 +43,11 @@ export class ChatModule {
         const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember);
         this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember, injectedAuth);
 
+        // MessageEventEmitter es la FUENTE ÚNICA DE VERDAD para cambios en mensajes
+        this.messageEventEmitter = options.messageEventEmitter ?? new MessageEventEmitter();
+
         const repositoryMessage = options.repositoryMessage ?? new MessageRepository();
-        const serviceMessage = options.serviceMessage ?? new MessageService(repositoryMessage);
+        const serviceMessage = options.serviceMessage ?? new MessageService(repositoryMessage, this.messageEventEmitter);
         this.controllerMessage = options.controllerMessage ?? new MessageController(serviceMessage, injectedAuth);
     }
 

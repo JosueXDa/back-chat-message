@@ -12,6 +12,8 @@ import { MessageService } from './modules/chat/services/message.service'
 import { MessageRepository } from './modules/chat/repositories/message.repository'
 import { ChannelMemberService } from './modules/chat/services/channel-member.service'
 import { ChannelMemberRepository } from './modules/chat/repositories/channel-member.repository'
+import { MessageEventEmitter } from './modules/chat/services/message-event.emitter'
+import { DebugController } from './modules/chat/controllers/debug.controller'
 
 export const app = new Hono()
 
@@ -30,26 +32,34 @@ app.get('/api', (c) => {
 })
 
 // Dependency Injection for WebSocket
+// MessageEventEmitter es el corazón del sistema: FUENTE ÚNICA DE VERDAD
+const messageEventEmitter = new MessageEventEmitter();
 const messageRepository = new MessageRepository();
 const channelMemberRepository = new ChannelMemberRepository();
-const messageService = new MessageService(messageRepository);
+const messageService = new MessageService(messageRepository, messageEventEmitter);
 const channelMemberService = new ChannelMemberService(channelMemberRepository);
 const connectionManager = new ConnectionManager();
 
 const chatGateway = new ChatGateway(
   connectionManager,
   messageService,
-  channelMemberService
+  channelMemberService,
+  messageEventEmitter
 );
+
+// Debug controller para monitorear el estado del gateway
+const debugController = new DebugController(chatGateway);
 
 // inyeccion de dependencias explicita para purebas
 const customChatModule = new ChatModule({
-  auth
+  auth,
+  messageEventEmitter
 });
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route('/api/users', usersModule.router);
 app.route('/api/chats', customChatModule.router);
+app.route('/api/debug', debugController.router);
 
 app.get(
   '/ws',
@@ -67,7 +77,7 @@ app.get(
         // Store WebSocket reference and attach user data
         wsConnection = ws.raw as ServerWebSocket<{ user: any }>;
         if (wsConnection) {
-          wsConnection.data = { user: session.user };
+          wsConnection.data = { ...wsConnection.data, user: session.user };
           chatGateway.handleConnection(wsConnection);
         }
       },

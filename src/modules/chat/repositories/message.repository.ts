@@ -1,6 +1,6 @@
 import { db } from "../../../db/index";
 import { messages } from "../../../db/schema/messages.entity";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import { CreateMessageDto } from "../dtos/create-message.dto";
 
 export type MessageRow = typeof messages.$inferSelect;
@@ -26,7 +26,7 @@ export class MessageRepository {
             return await db.select()
                 .from(messages)
                 .where(eq(messages.channelId, channelId))
-                .orderBy(desc(messages.createdAt))
+                .orderBy(asc(messages.createdAt))
                 .limit(limit);
         } catch (error) {
             console.error(`Error finding messages for channel ${channelId}:`, error);
