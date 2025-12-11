@@ -40,4 +40,13 @@ export class ChannelMemberService {
             throw error;
         }
     }
+
+    async isJoined(channelId: string, userId: string): Promise<boolean> {
+        try {
+            return await this.channelMemberRepository.isJoined(channelId, userId);
+        } catch (error) {
+            console.error(`Error in service checking if user ${userId} is joined to channel ${channelId}:`, error);
+            throw error;
+        }
+    }
 }

@@ -9,3 +9,8 @@ bun.lockb
 
 # env
 .env
+
+#Docs
+MESSAGING_IMPLEMENTATION.md
+RESUMEN_COMPLETO.md
+WEBSOCKET_CLIENT_GUIDE.md

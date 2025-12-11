@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { createBunWebSocket } from 'hono/bun'
+import { upgradeWebSocket, websocket } from 'hono/bun'
 import type { ServerWebSocket } from 'bun'
 import 'dotenv/config'
 import { auth } from './lib/auth'
@@ -12,8 +12,6 @@ import { MessageService } from './modules/chat/services/message.service'
 import { MessageRepository } from './modules/chat/repositories/message.repository'
 import { ChannelMemberService } from './modules/chat/services/channel-member.service'
 import { ChannelMemberRepository } from './modules/chat/repositories/channel-member.repository'
-
-const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket<{ user: any }>>()
 
 export const app = new Hono()
 
@@ -62,24 +60,29 @@ app.get(
       return { error: 'Unauthorized' }
     }
 
+    let wsConnection: ServerWebSocket<{ user: any }> | null = null;
+
     return {
       onOpen: (event, ws) => {
-        // Attach user to ws data manually since we can't easily type the ws object here in the callback signature to match exactly what we want without casting
-        // But we can pass the ws object to the gateway
-        if (ws.raw) {
-          ws.raw.data = { user: session.user };
-          chatGateway.handleConnection(ws.raw as any);
+        // Store WebSocket reference and attach user data
+        wsConnection = ws.raw as ServerWebSocket<{ user: any }>;
+        if (wsConnection) {
+          wsConnection.data = { user: session.user };
+          chatGateway.handleConnection(wsConnection);
         }
       },
       onMessage: (event, ws) => {
-        if (ws.raw) {
-          chatGateway.handleMessage(ws.raw as any, event.data as string);
+        wsConnection = ws.raw as ServerWebSocket<{ user: any }>;
+        if (wsConnection) {
+          chatGateway.handleMessage(wsConnection, event.data as string);
         }
       },
       onClose: (event, ws) => {
-        if (ws.raw) {
-          chatGateway.handleDisconnect(ws.raw as any);
+        wsConnection = ws.raw as ServerWebSocket<{ user: any }>;
+        if (wsConnection) {
+          chatGateway.handleDisconnect(wsConnection);
         }
+        wsConnection = null;
       },
     }
   })

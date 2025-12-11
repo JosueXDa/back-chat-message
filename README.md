@@ -2,6 +2,14 @@
 
 Backend modular para una aplicación de mensajería en tiempo (casi) real construido sobre Bun + Hono. Expone endpoints REST para autenticación, gestión de usuarios y sirve como base para módulos de chat y canales.
 
+## Cambios Recientes
+- ✅ **Endpoints de Persistencia de Mensajes**: Se han implementado dos nuevos endpoints REST bajo `/api/chats/messages`:
+  - `GET /:channelId` - Obtiene los últimos 50 mensajes de un canal
+  - `POST /` - Crea un nuevo mensaje (el `senderId` se obtiene automáticamente de la sesión)
+- ✅ **MessageController**: Nuevo controlador que sigue el patrón de diseño modular (Repository → Service → Controller)
+- ✅ **Integración en ChatModule**: El nuevo controlador está totalmente integrado y es inyectable para testing
+- ✅ **WebSocket Fix**: Corregido el manejo de WebSockets en Bun. Reemplazado `createBunWebSocket` (obsoleto) por `upgradeWebSocket` y `websocket` directos de `hono/bun`. Se mejoró la inicialización de conexiones y manejo de eventos.
+
 ## Propósito del proyecto
 - Unificar autenticación (Better Auth) y perfiles de usuario en un backend ligero.
 - Proveer endpoints CRUD de usuarios listos para integrarse con un front-end React/Next.
@@ -12,6 +20,14 @@ Backend modular para una aplicación de mensajería en tiempo (casi) real constr
 2. **Gestión de usuarios + perfiles** con validaciones `zod` y capa `service/repository` (@src/modules/users/controllers/user.controller.ts#13-67).
 3. **Infraestructura de Chat en Tiempo Real** con WebSockets (Bun native), canales y mensajes persistidos (@src/modules/chat/gateway/chat.gateway.ts).
 4. **Stack totalmente tipado** con TypeScript y Bun + TSX para DX rápida.
+
+## Notas de Implementación
+
+### WebSocket (Bun + Hono)
+- Se utiliza `upgradeWebSocket` y `websocket` directamente desde `hono/bun` (el `createBunWebSocket` está deprecado).
+- Los WebSockets requieren sesión válida de Better Auth.
+- La arquitectura de gateway permite inyección de dependencias para pruebas.
+- La gestión de conexiones se realiza mediante `ConnectionManager` que mantiene un mapa de usuarios conectados.
 
 ## Stack tecnológico
 | Capa | Herramienta | Uso |
@@ -64,7 +80,9 @@ graph TD
 
         subgraph "Chat Module"
             I[ChatGateway WS]:::entry
-            L[ChatModule/Controller]:::entry
+            L[ChannelController]:::entry
+            R[MessageController]:::entry
+            S[ChannelMemberController]:::entry
             
             subgraph Services
                 J[MessageService]:::logic
@@ -89,13 +107,16 @@ graph TD
     B --> D
     B --> I
     B --> L
+    B --> R
+    B --> S
 
     %% Conexiones Internas
     C --> G
     D --> E --> F
     I --> J --> K
     L --> M --> N
-    L --> O --> P
+    R --> J --> K
+    S --> O --> P
 
     %% Conexiones a DB
     G & F & K & N & P --> H
@@ -163,6 +184,8 @@ Si no se envía ningún campo, la API responde `400` con mensaje `Provide at lea
 
 ### Chat (`/api/chats`)
 
+**Nota de Autenticación**: Todos los endpoints de Chat (canales, miembros y mensajes) requieren una sesión válida de Better Auth. La sesión se valida automáticamente en cada request y retorna `401 Unauthorized` si no es válida.
+
 #### Canales (`/api/chats/channels`)
 | Método | Ruta | Body | Respuesta exitosa | Descripción |
 | --- | --- | --- | --- | --- |
@@ -190,6 +213,29 @@ ownerId?: string (optional)
 | POST | `/api/chats/members` | `{ channelId: string }` | `200 ChannelMember` | El usuario autenticado se une al canal especificado.
 | DELETE | `/api/chats/members/:channelId` | — | `200 { message: "Member deleted" }` | El usuario autenticado sale del canal especificado.
 
+#### Mensajes (`/api/chats/messages`)
+| Método | Ruta | Body | Respuesta exitosa | Descripción |
+| --- | --- | --- | --- | --- |
+| GET | `/api/chats/messages/:channelId` | — | `200 Message[]` | Lista los últimos 50 mensajes del canal, ordenados por fecha descendente. Requiere autenticación.
+| POST | `/api/chats/messages` | `CreateMessageDto` | `201 Message` | Crea un nuevo mensaje en el canal especificado. El `senderId` se obtiene automáticamente de la sesión autenticada. Requiere autenticación.
+
+**Esquema `CreateMessageDto`** (@src/modules/chat/dtos/create-message.dto.ts#3-9):
+```ts
+channelId: string (UUID válido)
+content: string (min 1 carácter)
+```
+
+**Respuesta Message**:
+```ts
+{
+  id: string (UUID)
+  senderId: string
+  channelId: string (UUID)
+  content: string
+  createdAt: timestamp
+}
+```
+
 ### Estados HTTP esperados
 - `200 OK`: Operación exitosa.
 - `201 Created`: (reservado para futuros endpoints de creación).
@@ -208,7 +254,30 @@ ownerId?: string (optional)
   - `NEW_MESSAGE`: Servidor notifica nuevo mensaje.
 
 ## Próximos pasos sugeridos
-- Integrar cliente Frontend con WebSockets.
-- Añadir eventos de "Escribiendo..." y confirmación de lectura.
-- Añadir pruebas automatizadas para `UserService`.
+- ✅ Endpoints REST CRUD de mensajes implementados (`/api/chats/messages`).
+- ✅ WebSocket integrado correctamente con `hono/bun` (sin dependencias deprecadas).
+- Integrar cliente Frontend con WebSockets para mensajería en tiempo real.
+- Añadir eventos de "Escribiendo..." y confirmación de lectura en WebSockets.
+- Añadir paginación a los endpoints de mensajes.
+- Implementar pruebas automatizadas para `MessageService` y `MessageRepository`.
 - Documentar scripts específicos de despliegue (Docker, CI/CD) cuando estén disponibles.
+
+## Historial de Correcciones
+
+### v1.1.0 - WebSocket Fix (Diciembre 2025)
+**Problema**: Error `TypeError: undefined is not an object (evaluating 'websocketListeners.onMessage')` al conectar clientes al WebSocket.
+
+**Causa**: La función `createBunWebSocket` estaba deprecada en Hono 4.10.6+ y no inicializaba correctamente los event listeners.
+
+**Solución**:
+- Reemplazó `createBunWebSocket` por los imports directos `upgradeWebSocket` y `websocket` desde `hono/bun`
+- Refactorizó el callback de `upgradeWebSocket` para inicializar correctamente `ws.data` en cada evento
+- Mejoró el manejo de referencias de WebSocket dentro del callback
+
+**Archivos Modificados**:
+- `src/index.ts` - Actualización de imports y callback WebSocket
+
+**Testing**: 
+- ✅ Backend inicia sin errores
+- ✅ Usuarios se conectan correctamente vía WebSocket
+- ✅ Arquitectura de módulos intacta

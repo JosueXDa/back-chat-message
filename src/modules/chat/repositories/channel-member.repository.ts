@@ -50,6 +50,22 @@ export class ChannelMemberRepository {
         }
     }
 
+    async isJoined(channelId: string, userId: string): Promise<boolean> {
+        try {
+            const member = await db.select({ member: channelMembers }).from(channelMembers).where(
+                and(
+                    eq(channelMembers.channelId, channelId),
+                    eq(channelMembers.userId, userId)
+                )
+            );
+
+            return !!member.length;
+        } catch (error) {
+            console.error(`Error checking if user ${userId} is joined to channel ${channelId}:`, error);
+            throw error;
+        }
+    }
+
     async getChannelsByUserId(userId: string) {
         try {
             const result = await db.select({

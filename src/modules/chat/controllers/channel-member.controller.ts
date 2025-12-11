@@ -79,5 +79,16 @@ export class ChannelMemberController {
                 return c.json({ error: "Internal Server Error" }, 500);
             }
         });
+
+        this.router.get("/is-joined/:channelId", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const channelId = c.req.param("channelId");
+                const isJoined = await this.channelMemberService.isJoined(channelId, session.user.id);
+                return c.json({ isJoined });
+            } catch (error) {
+                return c.json({ error: "Internal Server Error" }, 500);
+            }
+        });
     }
 }
