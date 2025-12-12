@@ -9,6 +9,9 @@ import { MessageRepository } from "./repositories/message.repository";
 import { MessageService } from "./services/message.service";
 import { MessageController } from "./controllers/message.controller";
 import { MessageEventEmitter } from "./services/message-event.emitter";
+import { ThreadRepository } from "./repositories/thread.repository";
+import { ThreadService } from "./services/thread.service";
+import { ThreadController } from "./controllers/thread.controller";
 
 import { auth } from "../../lib/auth";
 
@@ -22,6 +25,9 @@ type ChatModuleOptions = {
     repositoryMessage?: MessageRepository;
     serviceMessage?: MessageService;
     controllerMessage?: MessageController;
+    repositoryThread?: ThreadRepository;
+    serviceThread?: ThreadService;
+    controllerThread?: ThreadController;
     messageEventEmitter?: MessageEventEmitter;
     auth?: typeof auth;
 }
@@ -30,7 +36,9 @@ export class ChatModule {
     public readonly controller: ChannelController;
     public readonly controllerMember: ChannelMemberController;
     public readonly controllerMessage: MessageController;
+    public readonly controllerThread: ThreadController;
     public readonly messageEventEmitter: MessageEventEmitter;
+    public readonly threadService: ThreadService;
 
     constructor(options: ChatModuleOptions = {}) {
         const injectedAuth = options.auth ?? auth; // usar el inyectado o el default
@@ -43,11 +51,21 @@ export class ChatModule {
         const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember);
         this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember, injectedAuth);
 
+        // Thread setup
+        const repositoryThread = options.repositoryThread ?? new ThreadRepository();
+        this.threadService = options.serviceThread ?? new ThreadService(repositoryThread, repositoryMember);
+        this.controllerThread = options.controllerThread ?? new ThreadController(this.threadService, injectedAuth);
+
         // MessageEventEmitter es la FUENTE ÚNICA DE VERDAD para cambios en mensajes
         this.messageEventEmitter = options.messageEventEmitter ?? new MessageEventEmitter();
 
         const repositoryMessage = options.repositoryMessage ?? new MessageRepository();
-        const serviceMessage = options.serviceMessage ?? new MessageService(repositoryMessage, this.messageEventEmitter);
+        const serviceMessage = options.serviceMessage ?? new MessageService(
+            repositoryMessage,
+            repositoryThread,
+            repositoryMember,
+            this.messageEventEmitter
+        );
         this.controllerMessage = options.controllerMessage ?? new MessageController(serviceMessage, injectedAuth);
     }
 
@@ -56,6 +74,7 @@ export class ChatModule {
         app.route("/channels", this.controller.router);
         app.route("/members", this.controllerMember.router);
         app.route("/messages", this.controllerMessage.router);
+        app.route("/threads", this.controllerThread.router);
         return app;
     }
 }

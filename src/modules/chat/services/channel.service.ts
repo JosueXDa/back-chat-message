@@ -1,17 +1,15 @@
-import { ChannelRepository } from "../repositories/channel.repository";
-import { CreateChannelDto } from "../dtos/create-channel.dto";
-import { ChannelRow } from "../repositories/channel.repository";
+import { ChannelRepository, ChannelRow } from "../repositories/channel.repository";
+import type { CreateChannelData, UpdateChannelData } from "../domain";
 
 
 export class ChannelService {
     constructor(private readonly channelRepository: ChannelRepository) { }
 
-    async createChannel(data: CreateChannelDto): Promise<ChannelRow> {
+    async createChannel(data: CreateChannelData): Promise<ChannelRow> {
         try {
+            // El trigger add_channel_owner_as_admin automáticamente
+            // agrega al owner como 'admin' en channel_members
             const newChannel = await this.channelRepository.create(data);
-            if (data.ownerId) {
-                await this.channelRepository.addMember(newChannel.channel.id, data.ownerId);
-            }
             return newChannel;
         } catch (error) {
             console.error("Error in service creating channel:", error);
@@ -52,7 +50,7 @@ export class ChannelService {
         }
     }
 
-    async updateChannel(id: string, data: CreateChannelDto): Promise<ChannelRow | null> {
+    async updateChannel(id: string, data: UpdateChannelData): Promise<ChannelRow | null> {
         try {
             const existing = await this.channelRepository.findById(id);
             if (!existing) {
@@ -74,7 +72,10 @@ export class ChannelService {
                 return false;
             }
 
-            await this.channelRepository.deleteAllMembers(id);
+            // CASCADE se encarga de eliminar:
+            // - channel_members
+            // - threads
+            //   - messages (de cada thread)
             await this.channelRepository.delete(id);
             return true;
         } catch (error) {

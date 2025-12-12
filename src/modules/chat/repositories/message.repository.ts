@@ -1,15 +1,13 @@
 import { db } from "../../../db/index";
 import { messages } from "../../../db/schema/messages.entity";
-import { eq, desc, asc } from "drizzle-orm";
-import { CreateMessageDto } from "../dtos/create-message.dto";
-
-export type MessageRow = typeof messages.$inferSelect;
+import { eq } from "drizzle-orm";
+import type { Message, CreateMessageData } from "../domain";
 
 export class MessageRepository {
-    async create(data: CreateMessageDto): Promise<MessageRow> {
+    async create(data: CreateMessageData): Promise<Message> {
         try {
             const [newMessage] = await db.insert(messages).values({
-                channelId: data.channelId,
+                threadId: data.threadId,
                 senderId: data.senderId,
                 content: data.content,
             }).returning();
@@ -21,15 +19,58 @@ export class MessageRepository {
         }
     }
 
-    async findByChannel(channelId: string, limit: number = 50): Promise<MessageRow[]> {
+    async findByThread(threadId: string, limit: number = 50, offset: number = 0): Promise<Message[]> {
         try {
             return await db.select()
                 .from(messages)
-                .where(eq(messages.channelId, channelId))
-                .orderBy(asc(messages.createdAt))
-                .limit(limit);
+                .where(eq(messages.threadId, threadId))
+                .orderBy(messages.createdAt)
+                .limit(limit)
+                .offset(offset);
         } catch (error) {
-            console.error(`Error finding messages for channel ${channelId}:`, error);
+            console.error(`Error finding messages for thread ${threadId}:`, error);
+            throw error;
+        }
+    }
+
+    async findById(id: string): Promise<Message | undefined> {
+        try {
+            const [message] = await db
+                .select()
+                .from(messages)
+                .where(eq(messages.id, id));
+
+            return message;
+        } catch (error) {
+            console.error(`Error finding message with id ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async delete(id: string): Promise<Message | undefined> {
+        try {
+            const [deletedMessage] = await db
+                .delete(messages)
+                .where(eq(messages.id, id))
+                .returning();
+
+            return deletedMessage;
+        } catch (error) {
+            console.error(`Error deleting message with id ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async countByThread(threadId: string): Promise<number> {
+        try {
+            const result = await db
+                .select()
+                .from(messages)
+                .where(eq(messages.threadId, threadId));
+
+            return result.length;
+        } catch (error) {
+            console.error(`Error counting messages for thread ${threadId}:`, error);
             throw error;
         }
     }

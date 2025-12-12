@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { ChannelService } from "../services/channel.service";
 import { auth as authType } from "../../../lib/auth";
+import { createChannelSchema } from "../dtos/create-channel.dto";
+import { updateChannelSchema } from "../dtos/update-channel.dto";
 
 type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
 
@@ -58,13 +60,23 @@ export class ChannelController {
         this.router.post("/", authMiddleware, async (c) => {
             try {
                 const session = c.get("session");
-                const data = await c.req.json();
-                const channel = await this.channelService.createChannel({
-                    ...data,
+                const body = await c.req.json();
+                
+                // Validar con Zod
+                const validatedData = createChannelSchema.parse(body);
+                
+                // Agregar el ownerId del usuario autenticado
+                const data = {
+                    ...validatedData,
                     ownerId: session.user.id,
-                });
+                };
+                
+                const channel = await this.channelService.createChannel(data);
                 return c.json(channel);
-            } catch (error) {
+            } catch (error: any) {
+                if (error.name === "ZodError") {
+                    return c.json({ error: "Validation error", details: error.errors }, 400);
+                }
                 return c.json({ error: "Internal Server Error" }, 500);
             }
         });
@@ -72,13 +84,20 @@ export class ChannelController {
         this.router.patch("/:id", authMiddleware, async (c) => {
             try {
                 const id = c.req.param("id");
-                const data = await c.req.json();
+                const body = await c.req.json();
+                
+                // Validar con Zod
+                const data = updateChannelSchema.parse(body);
+                
                 const channel = await this.channelService.updateChannel(id, data);
                 if (!channel) {
                     return c.json({ message: "Channel not found" }, 404);
                 }
                 return c.json(channel);
-            } catch (error) {
+            } catch (error: any) {
+                if (error.name === "ZodError") {
+                    return c.json({ error: "Validation error", details: error.errors }, 400);
+                }
                 return c.json({ error: "Internal Server Error" }, 500);
             }
         });

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { MessageService } from "../services/message.service";
 import { auth as authType } from "../../../lib/auth";
+import { createMessageDto } from "../dtos/create-message.dto";
 
 type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
 
@@ -50,14 +51,28 @@ export class MessageController {
             await next();
         };
 
-        this.router.get("/:channelId", authMiddleware, async (c) => {
+        /**
+         * GET /messages/thread/:threadId
+         * Obtiene mensajes de un thread específico
+         */
+        this.router.get("/thread/:threadId", authMiddleware, async (c) => {
             try {
-                const channelId = c.req.param("channelId");
-                const messages = await this.messageService.getMessagesByChannel(channelId);
+                const session = c.get("session");
+                const threadId = c.req.param("threadId");
+                const limit = Number(c.req.query("limit") || 50);
+                const offset = Number(c.req.query("offset") || 0);
+                
+                const messages = await this.messageService.getMessagesByThread(
+                    threadId,
+                    session.user.id,
+                    limit,
+                    offset
+                );
+                
                 return c.json(messages);
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error fetching messages:", error);
-                return c.json({ error: "Internal Server Error" }, 500);
+                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
             }
         });
 
@@ -68,7 +83,7 @@ export class MessageController {
          * 
          * Request:
          * {
-         *   "channelId": "uuid",
+         *   "threadId": "uuid",
          *   "content": "Hello world"
          * }
          * 
@@ -77,7 +92,7 @@ export class MessageController {
          *   "id": "msg-id-from-server",
          *   "content": "Hello world",
          *   "senderId": "user-id",
-         *   "channelId": "uuid",
+         *   "threadId": "uuid",
          *   "createdAt": "2024-01-01T00:00:00Z"
          * }
          * 
@@ -89,25 +104,46 @@ export class MessageController {
                 const session = c.get("session");
                 const data = await c.req.json();
 
-                // Validar que channelId esté presente
-                if (!data.channelId) {
-                    return c.json({ error: "channelId is required" }, 400);
-                }
-
-                // Crear el mensaje
-                const message = await this.messageService.createMessage({
+                // Validar DTO
+                const validatedData = createMessageDto.parse({
                     ...data,
                     senderId: session.user.id,
                 });
 
+                // Crear el mensaje
+                const message = await this.messageService.createMessage(validatedData);
+
                 // Retornar el ID real del servidor inmediatamente
                 // El cliente lo usará para reemplazar su mensaje temporal
-                console.log(`✅ [API] Message created: ${message.id} in channel ${message.channelId}`);
+                console.log(`✅ [API] Message created: ${message.id} in thread ${message.threadId}`);
                 
                 return c.json(message, 201);
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error creating message:", error);
-                return c.json({ error: "Internal Server Error" }, 500);
+                if (error.name === "ZodError") {
+                    return c.json({ error: "Invalid request data", details: error.errors }, 400);
+                }
+                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            }
+        });
+
+        /**
+         * DELETE /messages/:id
+         * Elimina un mensaje (autor o moderator/admin)
+         */
+        this.router.delete("/:id", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const id = c.req.param("id");
+                
+                await this.messageService.deleteMessage(id, session.user.id);
+                
+                return c.json({ message: "Message deleted successfully" });
+            } catch (error: any) {
+                console.error("Error deleting message:", error);
+                const status = error.message === "Message not found" ? 404 : 
+                              error.message ? 403 : 500;
+                return c.json({ error: error.message || "Internal Server Error" }, status);
             }
         });
     }

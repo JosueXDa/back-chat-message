@@ -2,15 +2,14 @@ import { channels } from "../../../db/schema/channels.entity";
 import { channelMembers } from "../../../db/schema/channel-members.entity";
 import { db } from "../../../db";
 import { eq, sql } from "drizzle-orm";
-import { CreateChannelDto } from "../dtos/create-channel.dto";
-import { UpdateChannelDto } from "../dtos/update-channel.dto";
+import type { Channel, CreateChannelData, UpdateChannelData } from "../domain";
 
 export type ChannelRow = {
-    channel: typeof channels.$inferSelect;
+    channel: Channel;
 }
 
 export class ChannelRepository {
-    async create(data: CreateChannelDto): Promise<ChannelRow> {
+    async create(data: CreateChannelData): Promise<ChannelRow> {
         try {
             if (!data.ownerId) {
                 throw new Error("Owner ID is required");
@@ -32,7 +31,7 @@ export class ChannelRepository {
         }
     }
 
-    async update(id: string, data: UpdateChannelDto): Promise<ChannelRow | undefined> {
+    async update(id: string, data: UpdateChannelData): Promise<ChannelRow | undefined> {
         try {
             const updateData: Partial<typeof channels.$inferInsert> = {};
 
