@@ -20,6 +20,7 @@ export class ChannelRepository {
                 name: data.name,
                 description: data.description,
                 isPrivate: data.isPrivate,
+                imageUrl: data.imageUrl,
                 category: data.category,
                 ownerId: data.ownerId,
             }).returning(); //devuelve todo el objeto despues de insertar
@@ -38,6 +39,7 @@ export class ChannelRepository {
             if (data.name !== undefined) updateData.name = data.name;
             if (data.description !== undefined) updateData.description = data.description;
             if (data.isPrivate !== undefined) updateData.isPrivate = data.isPrivate;
+            if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
 
             if (Object.keys(updateData).length === 0) {
                 return this.findById(id);
