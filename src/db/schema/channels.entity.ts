@@ -1,8 +1,8 @@
 import { relations } from "drizzle-orm";
 import { pgTable, uuid, text, timestamp, boolean, varchar } from "drizzle-orm/pg-core";
-import { messages } from "./messages.entity";
 import { channelMembers } from "./channel-members.entity";
 import { users } from "./users.entity";
+import { threads } from "./threads.entity";
 
 export const channels = pgTable('channels', {
     id: uuid().defaultRandom().primaryKey(),
@@ -16,7 +16,7 @@ export const channels = pgTable('channels', {
 });
 
 export const channelsRelations = relations(channels, ({ many, one }) => ({
-    messages: many(messages),
+    threads: many(threads),
     channelMembers: many(channelMembers),
     owner: one(users, {
         fields: [channels.ownerId],
