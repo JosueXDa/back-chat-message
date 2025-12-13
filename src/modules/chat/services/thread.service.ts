@@ -165,10 +165,13 @@ export class ThreadService {
                 throw new Error("Thread not found");
             }
 
-            // Verificar que el usuario sea miembro del canal
-            const isMember = await this.channelMemberRepository.isJoined(thread.channelId, userId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
+            // Si userId es "system", bypass de permisos (para uso interno del gateway)
+            if (userId !== "system") {
+                // Verificar que el usuario sea miembro del canal
+                const isMember = await this.channelMemberRepository.isJoined(thread.channelId, userId);
+                if (!isMember) {
+                    throw new Error("User is not a member of this channel");
+                }
             }
 
             return thread;

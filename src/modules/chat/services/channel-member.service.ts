@@ -6,10 +6,19 @@ export class ChannelMemberService {
 
     async createMember(data: CreateChannelMemberData, requestUserId: string): Promise<ChannelMember> {
         try {
-            // Solo admins pueden agregar miembros
-            const hasPermission = await this.channelMemberRepository.hasPermission(data.channelId, requestUserId, 'admin');
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to add members");
+            // Verificar si el usuario ya es miembro
+            const isAlreadyMember = await this.channelMemberRepository.isJoined(data.channelId, data.userId);
+            if (isAlreadyMember) {
+                throw new Error("User is already a member of this channel");
+            }
+
+            // Un usuario puede unirse a sí mismo, o un admin puede agregar a otros
+            const isSelf = requestUserId === data.userId;
+            if (!isSelf) {
+                const hasPermission = await this.channelMemberRepository.hasPermission(data.channelId, requestUserId, 'admin');
+                if (!hasPermission) {
+                    throw new Error("Insufficient permissions to add other members");
+                }
             }
 
             return await this.channelMemberRepository.create(data);

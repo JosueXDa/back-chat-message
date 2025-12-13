@@ -107,8 +107,11 @@ export class ChannelMemberController {
                 const data = await c.req.json();
                 
                 // Validar DTO
-                const validatedData = createMemberChannelDto.parse(data);
-                
+                const validatedData = createMemberChannelDto.parse({
+                    ...data,
+                    userId: session.user.id,
+                });
+                 
                 const member = await this.channelMemberService.createMember(
                     validatedData,
                     session.user.id

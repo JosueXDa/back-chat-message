@@ -12,6 +12,8 @@ import { MessageService } from './modules/chat/services/message.service'
 import { MessageRepository } from './modules/chat/repositories/message.repository'
 import { ChannelMemberService } from './modules/chat/services/channel-member.service'
 import { ChannelMemberRepository } from './modules/chat/repositories/channel-member.repository'
+import { ThreadService } from './modules/chat/services/thread.service'
+import { ThreadRepository } from './modules/chat/repositories/thread.repository'
 import { MessageEventEmitter } from './modules/chat/services/message-event.emitter'
 import { DebugController } from './modules/chat/controllers/debug.controller'
 
@@ -36,13 +38,21 @@ app.get('/api', (c) => {
 const messageEventEmitter = new MessageEventEmitter();
 const messageRepository = new MessageRepository();
 const channelMemberRepository = new ChannelMemberRepository();
-const messageService = new MessageService(messageRepository, messageEventEmitter);
+const threadRepository = new ThreadRepository();
+const threadService = new ThreadService(threadRepository, channelMemberRepository);
+const messageService = new MessageService(
+  messageRepository,
+  threadRepository,
+  channelMemberRepository,
+  messageEventEmitter
+);
 const channelMemberService = new ChannelMemberService(channelMemberRepository);
 const connectionManager = new ConnectionManager();
 
 const chatGateway = new ChatGateway(
   connectionManager,
   messageService,
+  threadService,
   channelMemberService,
   messageEventEmitter
 );

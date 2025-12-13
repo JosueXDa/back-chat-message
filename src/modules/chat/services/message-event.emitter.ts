@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { MessageRow } from "../repositories/message.repository";
+import { Message } from "../domain/message.domain";
 
 export interface MessageCreatedEvent {
     id: string;
@@ -34,7 +34,7 @@ export class MessageEventEmitter extends EventEmitter {
      * Emite cuando se crea un mensaje en un thread
      * El cliente recibe esto por WebSocket y actualiza su estado
      */
-    emitMessageCreated(message: MessageRow): void {
+    emitMessageCreated(message: Message): void {
         const event = `${this.THREAD_PREFIX}${message.threadId}:message:created`;
         
         const payload: MessageCreatedEvent = {
