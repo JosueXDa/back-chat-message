@@ -13,7 +13,6 @@ export const users = pgTable("user", {
     createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
     name: text().notNull(),
     emailVerified: boolean("email_verified").notNull(),
-    image: text(),
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
     unique("user_email_unique").on(table.email),
