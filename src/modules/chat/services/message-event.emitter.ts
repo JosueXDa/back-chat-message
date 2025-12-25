@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { Message } from "../domain/message.domain";
+import { MessageWithSender } from "../domain/message.domain";
 
 export interface MessageCreatedEvent {
     id: string;
@@ -7,6 +7,14 @@ export interface MessageCreatedEvent {
     senderId: string;
     threadId: string;
     createdAt: Date;
+    sender: {
+        id: string;
+        name: string;
+        profile: {
+            displayName: string;
+            avatarUrl: string | null;
+        }
+    }
 }
 
 export interface MessageDeletedEvent {
@@ -34,7 +42,7 @@ export class MessageEventEmitter extends EventEmitter {
      * Emite cuando se crea un mensaje en un thread
      * El cliente recibe esto por WebSocket y actualiza su estado
      */
-    emitMessageCreated(message: Message): void {
+    emitMessageCreated(message: MessageWithSender): void {
         const event = `${this.THREAD_PREFIX}${message.threadId}:message:created`;
         
         const payload: MessageCreatedEvent = {
@@ -43,6 +51,7 @@ export class MessageEventEmitter extends EventEmitter {
             senderId: message.senderId,
             threadId: message.threadId,
             createdAt: message.createdAt,
+            sender: message.sender
         };
 
         console.log(`📤 [Event] Message created in thread ${message.threadId}: ${message.id}`);

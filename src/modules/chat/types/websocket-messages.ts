@@ -49,7 +49,10 @@ export type ClientMessage =
 export interface UserData {
     id: string;
     name: string;
-    image?: string | null;
+    profile: {
+        displayName: string;
+        avatarUrl: string | null;
+    }
 }
 
 /**

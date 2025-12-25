@@ -257,12 +257,7 @@ export class ChatGateway {
                     senderId: messageEvent.senderId,
                     threadId: messageEvent.threadId,
                     createdAt: messageEvent.createdAt.toISOString(),
-                    // Nota: En producción, obtener datos reales del usuario
-                    sender: {
-                        id: messageEvent.senderId,
-                        name: "User", // TODO: obtener del servicio de usuarios
-                        image: null
-                    }
+                    sender: messageEvent.sender
                 }
             };
 

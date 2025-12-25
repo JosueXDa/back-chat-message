@@ -1,5 +1,5 @@
 import { MessageRepository } from "../repositories/message.repository";
-import type { CreateMessageData, Message } from "../domain";
+import type { CreateMessageData, Message, MessageWithSender } from "../domain";
 import { MessageEventEmitter } from "./message-event.emitter";
 import { ThreadRepository } from "../repositories/thread.repository";
 import { ChannelMemberRepository } from "../repositories/channel-member.repository";
@@ -31,9 +31,14 @@ export class MessageService {
             // Actualizar timestamp del thread
             await this.threadRepository.update(thread.id, {});
             
-            // Emitir evento para que el Gateway lo broadcast por WebSocket
-            // El servidor es la ÚNICA FUENTE DE VERDAD
-            this.eventEmitter.emitMessageCreated(message);
+            // Obtener el mensaje completo con datos del sender para el evento
+            const fullMessage = await this.messageRepository.findByIdWithSender(message.id);
+            
+            if (fullMessage) {
+                // Emitir evento para que el Gateway lo broadcast por WebSocket
+                // El servidor es la ÚNICA FUENTE DE VERDAD
+                this.eventEmitter.emitMessageCreated(fullMessage);
+            }
             
             return message;
         } catch (error) {
@@ -42,7 +47,7 @@ export class MessageService {
         }
     }
 
-    async getMessagesByThread(threadId: string, userId: string, limit: number = 50, offset: number = 0): Promise<Message[]> {
+    async getMessagesByThread(threadId: string, userId: string, limit: number = 50, offset: number = 0): Promise<MessageWithSender[]> {
         try {
             // Verificar que el thread existe
             const thread = await this.threadRepository.findById(threadId);
