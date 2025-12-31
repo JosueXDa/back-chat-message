@@ -6,6 +6,7 @@ import 'dotenv/config'
 import { auth } from './lib/auth'
 import { usersModule } from './modules/users/users.module'
 import { ChatModule } from './modules/chat/chat.module'
+import { uploadModule } from './modules/uploads/uploads.module'
 import { ChatGateway } from './modules/chat/gateway/chat.gateway'
 import { ConnectionManager } from './modules/chat/gateway/connection.manager'
 import { MessageService } from './modules/chat/services/message.service'
@@ -69,6 +70,7 @@ const customChatModule = new ChatModule({
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route('/api/users', usersModule.router);
 app.route('/api/chats', customChatModule.router);
+app.route('/api', uploadModule.router);
 app.route('/api/debug', debugController.router);
 
 app.get(

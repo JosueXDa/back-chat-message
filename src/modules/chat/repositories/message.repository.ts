@@ -2,7 +2,7 @@ import { db } from "../../../db/index";
 import { messages } from "../../../db/schema/messages.entity";
 import { users } from "../../../db/schema/users.entity";
 import { profile } from "../../../db/schema/profile.entity";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import type { Message, CreateMessageData, MessageWithSender } from "../domain";
 
 export class MessageRepository {
@@ -12,6 +12,7 @@ export class MessageRepository {
                 threadId: data.threadId,
                 senderId: data.senderId,
                 content: data.content,
+                attachments: data.attachments ?? [],
             }).returning();
 
             return newMessage;
@@ -26,6 +27,7 @@ export class MessageRepository {
             const result = await db.select({
                 id: messages.id,
                 content: messages.content,
+                attachments: messages.attachments,
                 createdAt: messages.createdAt,
                 senderId: messages.senderId,
                 threadId: messages.threadId,
@@ -37,13 +39,14 @@ export class MessageRepository {
                 .innerJoin(users, eq(messages.senderId, users.id))
                 .leftJoin(profile, eq(users.id, profile.userId))
                 .where(eq(messages.threadId, threadId))
-                .orderBy(messages.createdAt)
+                .orderBy(desc(messages.createdAt))
                 .limit(limit)
                 .offset(offset);
 
             return result.map(row => ({
                 id: row.id,
                 content: row.content,
+                attachments: row.attachments,
                 createdAt: row.createdAt,
                 senderId: row.senderId,
                 threadId: row.threadId,
@@ -55,7 +58,7 @@ export class MessageRepository {
                         avatarUrl: row.senderAvatarUrl
                     }
                 }
-            }));
+            })).reverse();
         } catch (error) {
             console.error(`Error finding messages for thread ${threadId}:`, error);
             throw error;
@@ -81,6 +84,7 @@ export class MessageRepository {
             const [row] = await db.select({
                 id: messages.id,
                 content: messages.content,
+                attachments: messages.attachments,
                 createdAt: messages.createdAt,
                 senderId: messages.senderId,
                 threadId: messages.threadId,
@@ -98,6 +102,7 @@ export class MessageRepository {
             return {
                 id: row.id,
                 content: row.content,
+                attachments: row.attachments,
                 createdAt: row.createdAt,
                 senderId: row.senderId,
                 threadId: row.threadId,

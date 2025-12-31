@@ -1,9 +1,10 @@
 import { EventEmitter } from "events";
-import { MessageWithSender } from "../domain/message.domain";
+import { MessageWithSender, MessageAttachment } from "../domain/message.domain";
 
 export interface MessageCreatedEvent {
     id: string;
     content: string;
+    attachments: MessageAttachment[] | null;
     senderId: string;
     threadId: string;
     createdAt: Date;
@@ -48,6 +49,7 @@ export class MessageEventEmitter extends EventEmitter {
         const payload: MessageCreatedEvent = {
             id: message.id,
             content: message.content,
+            attachments: message.attachments,
             senderId: message.senderId,
             threadId: message.threadId,
             createdAt: message.createdAt,

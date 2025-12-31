@@ -1,3 +1,5 @@
+import { MessageAttachment } from "../domain/message.domain";
+
 /**
  * WebSocket Message Types
  * 
@@ -70,6 +72,7 @@ export interface ServerNewMessageEvent {
     payload: {
         id: string;
         content: string;
+        attachments: MessageAttachment[] | null;
         senderId: string;
         threadId: string;
         createdAt: string; // ISO 8601

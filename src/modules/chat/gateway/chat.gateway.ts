@@ -254,6 +254,7 @@ export class ChatGateway {
                 payload: {
                     id: messageEvent.id,
                     content: messageEvent.content,
+                    attachments: messageEvent.attachments,
                     senderId: messageEvent.senderId,
                     threadId: messageEvent.threadId,
                     createdAt: messageEvent.createdAt.toISOString(),

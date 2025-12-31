@@ -4,6 +4,43 @@ Backend modular para una aplicación de mensajería en tiempo (casi) real constr
 
 ## Cambios Recientes
 
+### v2.1.0 - Upload Directo al Backend (Diciembre 2025) 🚀
+
+**Migración del sistema de uploads de Presigned URLs a Upload Directo vía Backend.**
+
+#### Cambios Principales
+
+| Aspecto | Antes | Ahora |
+|---------|-------|-------|
+| **Flujo** | 3 requests (presigned URL → upload R2 → validar) | 1 request (FormData al backend) |
+| **Seguridad** | Cliente sube directo a R2 | Backend valida y sube |
+| **Múltiples archivos** | No soportado | Hasta 10 archivos |
+
+#### Archivos Modificados
+
+1. **`src/lib/r2.ts`** - Nueva función `uploadToR2()` para upload directo + constantes de límites
+2. **`src/modules/uploads/services/upload.service.ts`** - Métodos de upload por tipo de recurso
+3. **`src/modules/uploads/controllers/upload.controller.ts`** - Endpoints con FormData
+4. **`src/modules/uploads/dtos/upload-response.dto.ts`** - Nuevos DTOs de respuesta
+
+#### Nuevos Endpoints
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /api/uploads/profile/avatar` | Subir avatar de perfil |
+| `POST /api/uploads/profile/banner` | Subir banner de perfil |
+| `POST /api/uploads/channel/icon` | Subir icono de canal |
+| `POST /api/uploads/channel/banner` | Subir banner de canal |
+| `POST /api/uploads/message/image` | Subir imagen de mensaje |
+| `POST /api/uploads/message/attachment` | Subir adjunto de mensaje |
+| `POST /api/uploads/message/images` | Subir múltiples imágenes (hasta 10) |
+| `POST /api/uploads/message/attachments` | Subir múltiples adjuntos (hasta 10) |
+| `GET /api/uploads/info` | Obtener límites y tipos permitidos |
+
+📚 **Documentación completa:** [UPLOADS_INTEGRATION.md](./UPLOADS_INTEGRATION.md)
+
+---
+
 ### v2.0.0 - Server-Driven State Synchronization (Diciembre 2025) ⭐
 
 **Implementación Completa de Server-Driven State Synchronization para garantizar consistencia de mensajes entre clientes.**

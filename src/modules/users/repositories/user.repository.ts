@@ -32,7 +32,6 @@ export class UserRepository {
 
         if (data.email !== undefined) userUpdates.email = data.email;
         if (data.name !== undefined) userUpdates.name = data.name;
-        if (data.image !== undefined) userUpdates.image = data.image ?? null;
         if (data.emailVerified !== undefined) userUpdates.emailVerified = data.emailVerified;
 
         if (Object.keys(userUpdates).length > 0) {
@@ -47,6 +46,7 @@ export class UserRepository {
 
             if (profileData.displayName !== undefined) profileUpdates.displayName = profileData.displayName;
             if (profileData.avatarUrl !== undefined) profileUpdates.avatarUrl = profileData.avatarUrl ?? null;
+            if (profileData.bannerUrl !== undefined) profileUpdates.bannerUrl = profileData.bannerUrl ?? null;
             if (profileData.bio !== undefined) profileUpdates.bio = profileData.bio ?? null;
             if (profileData.age !== undefined) profileUpdates.age = profileData.age ?? null;
             if (profileData.isOnline !== undefined) profileUpdates.isOnline = profileData.isOnline;
@@ -64,6 +64,7 @@ export class UserRepository {
                     userId: id,
                     displayName: profileData.displayName,
                     avatarUrl: profileData.avatarUrl ?? null,
+                    bannerUrl: profileData.bannerUrl ?? null,
                     bio: profileData.bio ?? null,
                     age: profileData.age ?? null,
                     isOnline: profileData.isOnline ?? false,
