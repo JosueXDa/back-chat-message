@@ -44,6 +44,10 @@ export const FILE_SIZE_LIMITS = {
     DOCUMENT: 25 * 1024 * 1024,
     /** Tamaño máximo para avatares/banners: 5MB */
     PROFILE: 5 * 1024 * 1024,
+    /** Tamaño máximo para videos: 25MB */
+    VIDEO: 25 * 1024 * 1024,
+    /** Tamaño máximo para audios: 50MB */
+    AUDIO: 50 * 1024 * 1024,
 };
 
 /**
@@ -58,6 +62,20 @@ export const ALLOWED_MIME_TYPES = {
         "text/plain",
         "text/csv",
     ],
+    VIDEOS: [
+        "video/mp4",
+        "video/webm",
+        "video/ogg",
+        "video/quicktime",
+    ],
+    AUDIOS: [
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/ogg",
+        "audio/wav",
+        "audio/webm",
+        "audio/aac",
+    ],
     ALL_ATTACHMENTS: [] as string[], // Se llenará abajo
 };
 
@@ -65,6 +83,8 @@ export const ALLOWED_MIME_TYPES = {
 ALLOWED_MIME_TYPES.ALL_ATTACHMENTS = [
     ...ALLOWED_MIME_TYPES.IMAGES,
     ...ALLOWED_MIME_TYPES.DOCUMENTS,
+    ...ALLOWED_MIME_TYPES.VIDEOS,
+    ...ALLOWED_MIME_TYPES.AUDIOS,
 ];
 
 /**
@@ -77,6 +97,8 @@ export enum R2Folder {
     CHANNEL_BANNERS = "channels/banners",
     MESSAGE_ATTACHMENTS = "messages/attachments",
     MESSAGE_IMAGES = "messages/images",
+    MESSAGE_VIDEOS = "messages/videos",
+    MESSAGE_AUDIOS = "messages/audios",
     TEMP = "tmp/uploads",
 }
 

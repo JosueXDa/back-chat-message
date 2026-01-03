@@ -194,6 +194,72 @@ export class UploadService {
     }
 
     /**
+     * Sube un video de mensaje
+     */
+    async uploadMessageVideo(file: ParsedFile): Promise<UploadResult> {
+        const validation = this.validateFile(file, ALLOWED_MIME_TYPES.VIDEOS, FILE_SIZE_LIMITS.VIDEO);
+        if (!validation.valid) {
+            throw new Error(validation.error);
+        }
+
+        return uploadToR2(file.arrayBuffer, file.name, file.type, R2Folder.MESSAGE_VIDEOS);
+    }
+
+    /**
+     * Sube múltiples videos de mensaje
+     */
+    async uploadMultipleMessageVideos(files: ParsedFile[]): Promise<UploadResult[]> {
+        // Validar todos los archivos primero
+        for (const file of files) {
+            const validation = this.validateFile(file, ALLOWED_MIME_TYPES.VIDEOS, FILE_SIZE_LIMITS.VIDEO);
+            if (!validation.valid) {
+                throw new Error(`Error en archivo ${file.name}: ${validation.error}`);
+            }
+        }
+
+        const preparedFiles = files.map(file => ({
+            file: file.arrayBuffer,
+            filename: file.name,
+            contentType: file.type,
+        }));
+
+        return uploadMultipleToR2(preparedFiles, R2Folder.MESSAGE_VIDEOS);
+    }
+
+    /**
+     * Sube un audio de mensaje
+     */
+    async uploadMessageAudio(file: ParsedFile): Promise<UploadResult> {
+        const validation = this.validateFile(file, ALLOWED_MIME_TYPES.AUDIOS, FILE_SIZE_LIMITS.AUDIO);
+        if (!validation.valid) {
+            throw new Error(validation.error);
+        }
+
+        return uploadToR2(file.arrayBuffer, file.name, file.type, R2Folder.MESSAGE_AUDIOS);
+    }
+
+    /**
+     * Sube múltiples audios de mensaje
+     */
+    async uploadMultipleMessageAudios(files: ParsedFile[]): Promise<UploadResult[]> {
+        // Validar todos los archivos primero
+        for (const file of files) {
+            const validation = this.validateFile(file, ALLOWED_MIME_TYPES.AUDIOS, FILE_SIZE_LIMITS.AUDIO);
+            if (!validation.valid) {
+                throw new Error(`Error en archivo ${file.name}: ${validation.error}`);
+            }
+        }
+
+        const preparedFiles = files.map(file => ({
+            file: file.arrayBuffer,
+            filename: file.name,
+            contentType: file.type,
+        }));
+
+        return uploadMultipleToR2(preparedFiles, R2Folder.MESSAGE_AUDIOS);
+    }
+
+    /**
      * Elimina un archivo anterior si el usuario actualiza su recurso
      */
     async replaceFile(oldPublicUrl: string | null, newPublicUrl: string): Promise<void> {

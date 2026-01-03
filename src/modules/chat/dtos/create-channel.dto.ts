@@ -12,6 +12,7 @@ export const createChannelSchema = z.object({
     description: z.string().max(500).optional().nullable(),
     isPrivate: z.boolean().optional().default(false),
     imageUrl: z.string().url("imageUrl must be a valid URL").optional(),
+    bannerUrl: z.string().url("bannerUrl must be a valid URL").optional().nullable(),
     category: z.string().optional().default("General"),
     memberIds: memberIdsSchema.optional(),
     ownerId: z.string().optional(),

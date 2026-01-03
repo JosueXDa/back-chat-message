@@ -1,6 +1,7 @@
 import { UserRepository } from "./repositories/user.repository";
 import { UserService } from "./services/user.service";
 import { UserController } from "./controllers/user.controller";
+import { auth } from "../../lib/auth";
 
 type UsersModuleOptions = {
     repository?: UserRepository;
@@ -14,7 +15,7 @@ export class UsersModule {
     constructor(options: UsersModuleOptions = {}) {
         const repository = options.repository ?? new UserRepository();
         const service = options.service ?? new UserService(repository);
-        this.controller = options.controller ?? new UserController(service);
+        this.controller = options.controller ?? new UserController(service, auth);
     }
 
     get router() {

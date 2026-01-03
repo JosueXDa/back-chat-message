@@ -301,6 +301,130 @@ export class UploadController {
             }
         });
 
+        /**
+         * Sube un video de mensaje
+         * POST /uploads/message/video
+         * Body: FormData con campo "file"
+         */
+        this.router.post("/message/video", async (c) => {
+            try {
+                const formData = await c.req.formData();
+                const file = formData.get("file") as File | null;
+
+                if (!file) {
+                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                }
+
+                const parsedFile = await parseFile(file);
+                const result = await this.uploadService.uploadMessageVideo(parsedFile);
+
+                return c.json({
+                    success: true,
+                    data: result,
+                });
+            } catch (error) {
+                console.error("Error subiendo video de mensaje:", error);
+                return c.json({ 
+                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
+                }, 400);
+            }
+        });
+
+        /**
+         * Sube múltiples videos de mensaje (hasta 5)
+         * POST /uploads/message/videos
+         * Body: FormData con campo "files" (múltiples archivos)
+         */
+        this.router.post("/message/videos", async (c) => {
+            try {
+                const formData = await c.req.formData();
+                const files = formData.getAll("files") as File[];
+
+                if (!files || files.length === 0) {
+                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                }
+
+                if (files.length > 5) {
+                    return c.json({ error: "Máximo 5 videos por solicitud" }, 400);
+                }
+
+                const parsedFiles = await parseMultipleFiles(files);
+                const results = await this.uploadService.uploadMultipleMessageVideos(parsedFiles);
+
+                return c.json({
+                    success: true,
+                    data: results,
+                });
+            } catch (error) {
+                console.error("Error subiendo múltiples videos:", error);
+                return c.json({ 
+                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
+                }, 400);
+            }
+        });
+
+        /**
+         * Sube un audio de mensaje
+         * POST /uploads/message/audio
+         * Body: FormData con campo "file"
+         */
+        this.router.post("/message/audio", async (c) => {
+            try {
+                const formData = await c.req.formData();
+                const file = formData.get("file") as File | null;
+
+                if (!file) {
+                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                }
+
+                const parsedFile = await parseFile(file);
+                const result = await this.uploadService.uploadMessageAudio(parsedFile);
+
+                return c.json({
+                    success: true,
+                    data: result,
+                });
+            } catch (error) {
+                console.error("Error subiendo audio de mensaje:", error);
+                return c.json({ 
+                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
+                }, 400);
+            }
+        });
+
+        /**
+         * Sube múltiples audios de mensaje (hasta 5)
+         * POST /uploads/message/audios
+         * Body: FormData con campo "files" (múltiples archivos)
+         */
+        this.router.post("/message/audios", async (c) => {
+            try {
+                const formData = await c.req.formData();
+                const files = formData.getAll("files") as File[];
+
+                if (!files || files.length === 0) {
+                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                }
+
+                if (files.length > 5) {
+                    return c.json({ error: "Máximo 5 audios por solicitud" }, 400);
+                }
+
+                const parsedFiles = await parseMultipleFiles(files);
+                const results = await this.uploadService.uploadMultipleMessageAudios(parsedFiles);
+
+                return c.json({
+                    success: true,
+                    data: results,
+                });
+            } catch (error) {
+                console.error("Error subiendo múltiples audios:", error);
+                return c.json({ 
+                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
+                }, 400);
+            }
+        });
+
         // ========== VALIDACIÓN Y UTILIDADES ==========
 
         /**
@@ -350,13 +474,28 @@ export class UploadController {
                         maxSizeMB: FILE_SIZE_LIMITS.PROFILE / (1024 * 1024),
                         allowedTypes: ALLOWED_MIME_TYPES.IMAGES,
                     },
+                    video: {
+                        maxSize: FILE_SIZE_LIMITS.VIDEO,
+                        maxSizeMB: FILE_SIZE_LIMITS.VIDEO / (1024 * 1024),
+                        allowedTypes: ALLOWED_MIME_TYPES.VIDEOS,
+                    },
+                    audio: {
+                        maxSize: FILE_SIZE_LIMITS.AUDIO,
+                        maxSizeMB: FILE_SIZE_LIMITS.AUDIO / (1024 * 1024),
+                        allowedTypes: ALLOWED_MIME_TYPES.AUDIOS,
+                    },
                     attachment: {
                         maxSize: FILE_SIZE_LIMITS.DOCUMENT,
                         maxSizeMB: FILE_SIZE_LIMITS.DOCUMENT / (1024 * 1024),
                         allowedTypes: ALLOWED_MIME_TYPES.ALL_ATTACHMENTS,
                     },
                 },
-                maxFilesPerRequest: 10,
+                maxFilesPerRequest: {
+                    images: 10,
+                    attachments: 10,
+                    videos: 5,
+                    audios: 5,
+                },
             });
         });
     }

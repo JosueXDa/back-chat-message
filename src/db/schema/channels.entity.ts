@@ -10,6 +10,7 @@ export const channels = pgTable('channels', {
     description: text('description'),
     isPrivate: boolean('is_private').default(false),
     imageUrl: text('image_url'),
+    bannerUrl: text('banner_url'),
     category: text('category').default('General').notNull(),
     ownerId: text('owner_id').references(() => users.id).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),

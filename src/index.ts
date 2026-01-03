@@ -23,7 +23,7 @@ export const app = new Hono()
 
 app.use('/api/*', cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:8081',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,

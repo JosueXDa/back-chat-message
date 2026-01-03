@@ -106,6 +106,20 @@
       "when": 1767131406071,
       "tag": "0016_striped_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1767152247311,
+      "tag": "0017_lonely_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1767330626288,
+      "tag": "0018_calm_revanche",
+      "breakpoints": true
     }
   ]
 }
