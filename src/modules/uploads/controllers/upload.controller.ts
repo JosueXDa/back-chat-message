@@ -32,11 +32,12 @@ const parseMultipleFiles = async (files: File[]): Promise<ParsedFile[]> => {
 
 export class UploadController {
     public readonly router: Hono<{ Variables: Variables }>;
-    private readonly uploadService: UploadService;
 
-    constructor(private readonly auth: typeof authType) {
+    constructor(
+        private readonly uploadService: UploadService,
+        private readonly auth: typeof authType
+    ) {
         this.router = new Hono<{ Variables: Variables }>();
-        this.uploadService = new UploadService();
         this.registerRoutes();
     }
 

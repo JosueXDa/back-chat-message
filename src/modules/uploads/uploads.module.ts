@@ -1,20 +1,27 @@
 import { Hono } from "hono";
 import { auth } from "../../lib/auth";
 import { UploadController } from "./controllers/upload.controller";
+import { UploadService } from "./services/upload.service";
+
+type UploadModuleOptions = {
+    service?: UploadService;
+    controller?: UploadController;
+    auth?: typeof auth;
+};
 
 export class UploadModule {
-    public readonly router: Hono;
+    public readonly controller: UploadController;
 
-    constructor() {
-        this.router = new Hono();
-        this.registerRoutes();
+    constructor(options: UploadModuleOptions = {}) {
+        const injectedAuth = options.auth ?? auth;
+        const service = options.service ?? new UploadService();
+        this.controller = options.controller ?? new UploadController(service, injectedAuth);
     }
 
-    private registerRoutes() {
-        const uploadController = new UploadController(auth);
-        
-        // Monta todas las rutas de upload bajo /uploads
-        this.router.route("/uploads", uploadController.router);
+    get router() {
+        const app = new Hono();
+        app.route("/uploads", this.controller.router);
+        return app;
     }
 }
 
