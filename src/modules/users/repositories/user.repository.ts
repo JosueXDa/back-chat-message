@@ -3,31 +3,29 @@ import { db } from "../../../db";
 import { users } from "../../../db/schema/users.entity";
 import { profile as profiles } from "../../../db/schema/profile.entity";
 import { UpdateUserDto } from "../dtos/update-user.dto";
-
-export type UserRow = {
-    user: typeof users.$inferSelect;
-    profile: typeof profiles.$inferSelect | null;
-};
+import type { User, Profile, UserWithProfile } from "../entities";
 
 export class UserRepository {
-    async findAll(): Promise<UserRow[]> {
-        return await db
+    async findAll(): Promise<UserWithProfile[]> {
+        const rows = await db
             .select({ user: users, profile: profiles })
             .from(users)
             .leftJoin(profiles, eq(profiles.userId, users.id));
+
+        return rows.map(row => this.mapRowToUserWithProfile(row));
     }
 
-    async findById(id: string): Promise<UserRow | undefined> {
-        const [result] = await db
+    async findById(id: string): Promise<UserWithProfile | undefined> {
+        const [row] = await db
             .select({ user: users, profile: profiles })
             .from(users)
             .leftJoin(profiles, eq(profiles.userId, users.id))
             .where(eq(users.id, id));
 
-        return result;
+        return row ? this.mapRowToUserWithProfile(row) : undefined;
     }
 
-    async update(id: string, data: UpdateUserDto): Promise<UserRow | undefined> {
+    async update(id: string, data: UpdateUserDto): Promise<UserWithProfile | undefined> {
         const userUpdates: Partial<typeof users.$inferInsert> = {};
 
         if (data.email !== undefined) userUpdates.email = data.email;
@@ -74,18 +72,56 @@ export class UserRepository {
             }
         }
 
-        const [result] = await db
+        const [row] = await db
             .select({ user: users, profile: profiles })
             .from(users)
             .leftJoin(profiles, eq(profiles.userId, users.id))
             .where(eq(users.id, id));
 
-        return result;
+        return row ? this.mapRowToUserWithProfile(row) : undefined;
     }
 
-    async delete(id: string) {
+    async delete(id: string): Promise<User | undefined> {
         await db.delete(profiles).where(eq(profiles.userId, id));
         const [deletedUser] = await db.delete(users).where(eq(users.id, id)).returning();
-        return deletedUser;
+        
+        return deletedUser ? this.mapUserRowToUser(deletedUser) : undefined;
+    }
+
+    private mapRowToUserWithProfile(row: {
+        user: typeof users.$inferSelect;
+        profile: typeof profiles.$inferSelect | null;
+    }): UserWithProfile {
+        return {
+            ...this.mapUserRowToUser(row.user),
+            profile: row.profile ? this.mapProfileRowToProfile(row.profile) : null
+        };
+    }
+
+    private mapUserRowToUser(userRow: typeof users.$inferSelect): User {
+        return {
+            id: userRow.id,
+            name: userRow.name,
+            email: userRow.email,
+            emailVerified: userRow.emailVerified,
+            image: userRow.image,
+            createdAt: userRow.createdAt,
+            updatedAt: userRow.updatedAt
+        };
+    }
+
+    private mapProfileRowToProfile(profileRow: typeof profiles.$inferSelect): Profile {
+        return {
+            id: profileRow.id,
+            userId: profileRow.userId,
+            displayName: profileRow.displayName,
+            avatarUrl: profileRow.avatarUrl,
+            bannerUrl: profileRow.bannerUrl,
+            bio: profileRow.bio,
+            age: profileRow.age,
+            isOnline: profileRow.isOnline,
+            createdAt: profileRow.createdAt,
+            updatedAt: profileRow.updatedAt
+        };
     }
 }

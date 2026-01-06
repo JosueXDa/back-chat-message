@@ -21,7 +21,6 @@ export class UserController {
     }
 
     private registerRoutes() {
-        // Middleware de autenticación
         const authMiddleware = async (c: any, next: any) => {
             const session = await this.auth.api.getSession({
                 headers: c.req.raw.headers,
@@ -66,14 +65,11 @@ export class UserController {
                 const session = c.get("session");
                 const id = c.req.param("id");
 
-                // Verificar que el usuario solo pueda actualizar su propio perfil
                 if (session.user.id !== id) {
                     return c.json({ error: "Forbidden: You can only update your own profile" }, 403);
                 }
 
                 const body = await c.req.json();
-                
-                // Validar con Zod usando parse en lugar de safeParse
                 const validatedData = updateUserSchema.parse(body);
 
                 const updated = await this.userService.updateUser(id, validatedData);
@@ -97,7 +93,6 @@ export class UserController {
                 const session = c.get("session");
                 const id = c.req.param("id");
 
-                // Verificar que el usuario solo pueda eliminar su propia cuenta
                 if (session.user.id !== id) {
                     return c.json({ error: "Forbidden: You can only delete your own account" }, 403);
                 }

@@ -16,6 +16,7 @@ import { ChannelMemberRepository } from './modules/chat/repositories/channel-mem
 import { ThreadService } from './modules/chat/services/thread.service'
 import { ThreadRepository } from './modules/chat/repositories/thread.repository'
 import { MessageEventEmitter } from './modules/chat/services/message-event.emitter'
+import { AuthorizationService } from './modules/chat/services/authorization.service'
 import { DebugController } from './modules/chat/controllers/debug.controller'
 
 export const app = new Hono()
@@ -40,11 +41,15 @@ const messageEventEmitter = new MessageEventEmitter();
 const messageRepository = new MessageRepository();
 const channelMemberRepository = new ChannelMemberRepository();
 const threadRepository = new ThreadRepository();
-const threadService = new ThreadService(threadRepository, channelMemberRepository);
+
+// AuthorizationService centraliza las validaciones de permisos
+const authorizationService = new AuthorizationService(channelMemberRepository);
+
+const threadService = new ThreadService(threadRepository, authorizationService);
 const messageService = new MessageService(
   messageRepository,
   threadRepository,
-  channelMemberRepository,
+  authorizationService,
   messageEventEmitter
 );
 const channelMemberService = new ChannelMemberService(channelMemberRepository);
