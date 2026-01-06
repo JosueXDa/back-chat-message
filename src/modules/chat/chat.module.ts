@@ -12,6 +12,7 @@ import { MessageEventEmitter } from "./services/message-event.emitter";
 import { ThreadRepository } from "./repositories/thread.repository";
 import { ThreadService } from "./services/thread.service";
 import { ThreadController } from "./controllers/thread.controller";
+import { AuthorizationService } from "./services/authorization.service";
 
 import { auth } from "../../lib/auth";
 
@@ -29,6 +30,7 @@ type ChatModuleOptions = {
     serviceThread?: ThreadService;
     controllerThread?: ThreadController;
     messageEventEmitter?: MessageEventEmitter;
+    authorizationService?: AuthorizationService;
     auth?: typeof auth;
 }
 
@@ -51,9 +53,12 @@ export class ChatModule {
         const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember);
         this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember, injectedAuth);
 
+        // AuthorizationService - Centraliza validaciones de permisos
+        const authorizationService = options.authorizationService ?? new AuthorizationService(repositoryMember);
+
         // Thread setup
         const repositoryThread = options.repositoryThread ?? new ThreadRepository();
-        this.threadService = options.serviceThread ?? new ThreadService(repositoryThread, repositoryMember);
+        this.threadService = options.serviceThread ?? new ThreadService(repositoryThread, authorizationService);
         this.controllerThread = options.controllerThread ?? new ThreadController(this.threadService, injectedAuth);
 
         // MessageEventEmitter es la FUENTE ÚNICA DE VERDAD para cambios en mensajes
@@ -63,7 +68,7 @@ export class ChatModule {
         const serviceMessage = options.serviceMessage ?? new MessageService(
             repositoryMessage,
             repositoryThread,
-            repositoryMember,
+            authorizationService,
             this.messageEventEmitter
         );
         this.controllerMessage = options.controllerMessage ?? new MessageController(serviceMessage, injectedAuth);

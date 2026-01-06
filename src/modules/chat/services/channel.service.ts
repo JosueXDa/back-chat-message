@@ -1,11 +1,11 @@
-import { ChannelRepository, ChannelRow } from "../repositories/channel.repository";
-import type { CreateChannelData, UpdateChannelData } from "../domain";
+import { ChannelRepository } from "../repositories/channel.repository";
+import type { Channel, CreateChannelData, UpdateChannelData } from "../domain";
 
 
 export class ChannelService {
     constructor(private readonly channelRepository: ChannelRepository) { }
 
-    async createChannel(data: CreateChannelData): Promise<ChannelRow> {
+    async createChannel(data: CreateChannelData): Promise<Channel> {
         try {
             // El trigger add_channel_owner_as_admin automáticamente
             // agrega al owner como 'admin' en channel_members
@@ -18,7 +18,7 @@ export class ChannelService {
     }
 
     async getAllChannels(page: number = 1, limit: number = 10): Promise<{
-        data: ChannelRow[];
+        data: Channel[];
         meta: { total: number; page: number; limit: number; totalPages: number }
     }> {
         try {
@@ -40,7 +40,7 @@ export class ChannelService {
         }
     }
 
-    async getChannelById(id: string): Promise<ChannelRow | null> {
+    async getChannelById(id: string): Promise<Channel | null> {
         try {
             const channel = await this.channelRepository.findById(id);
             return channel || null;
@@ -50,7 +50,7 @@ export class ChannelService {
         }
     }
 
-    async updateChannel(id: string, data: UpdateChannelData): Promise<ChannelRow | null> {
+    async updateChannel(id: string, data: UpdateChannelData): Promise<Channel | null> {
         try {
             const existing = await this.channelRepository.findById(id);
             if (!existing) {

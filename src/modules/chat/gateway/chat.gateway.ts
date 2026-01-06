@@ -6,9 +6,7 @@ import { ChannelMemberService } from "../services/channel-member.service";
 import { MessageEventEmitter, MessageCreatedEvent, MessageDeletedEvent } from "../services/message-event.emitter";
 import { createMessageDto } from "../dtos/create-message.dto";
 import { ServerNewMessageEvent, ServerMessageDeletedEvent, ClientMessage } from "../types/websocket-messages";
-import { users } from "../../../db/schema/users.entity";
-
-type User = typeof users.$inferSelect;
+import { User } from "../domain";
 
 /**
  * ChatGateway

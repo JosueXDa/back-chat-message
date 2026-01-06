@@ -2,13 +2,13 @@ import { MessageRepository } from "../repositories/message.repository";
 import type { CreateMessageData, Message, MessageWithSender } from "../domain";
 import { MessageEventEmitter } from "./message-event.emitter";
 import { ThreadRepository } from "../repositories/thread.repository";
-import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import { AuthorizationService } from "./authorization.service";
 
 export class MessageService {
     constructor(
         private readonly messageRepository: MessageRepository,
         private readonly threadRepository: ThreadRepository,
-        private readonly channelMemberRepository: ChannelMemberRepository,
+        private readonly authorizationService: AuthorizationService,
         private readonly eventEmitter: MessageEventEmitter
     ) { }
 
@@ -21,10 +21,7 @@ export class MessageService {
             }
 
             // Verificar que el usuario es miembro del canal
-            const isMember = await this.channelMemberRepository.isJoined(thread.channelId, data.senderId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
+            await this.authorizationService.requireChannelMembership(thread.channelId, data.senderId);
 
             const message = await this.messageRepository.create(data);
             
@@ -56,10 +53,7 @@ export class MessageService {
             }
 
             // Verificar que el usuario es miembro del canal
-            const isMember = await this.channelMemberRepository.isJoined(thread.channelId, userId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
+            await this.authorizationService.requireChannelMembership(thread.channelId, userId);
 
             return await this.messageRepository.findByThread(threadId, limit, offset);
         } catch (error) {
@@ -81,13 +75,13 @@ export class MessageService {
                 throw new Error("Thread not found");
             }
 
-            const canDelete = 
-                message.senderId === userId ||
-                await this.channelMemberRepository.hasPermission(thread.channelId, userId, 'moderator');
-
-            if (!canDelete) {
-                throw new Error("Insufficient permissions to delete this message");
-            }
+            // Verificar que es el autor o tiene permisos de moderador
+            await this.authorizationService.requireOwnerOrPermission(
+                thread.channelId,
+                userId,
+                message.senderId,
+                'moderator'
+            );
 
             await this.messageRepository.delete(id);
             this.eventEmitter.emitMessageDeleted(id, message.threadId);

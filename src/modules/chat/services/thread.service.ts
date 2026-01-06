@@ -1,20 +1,17 @@
 import { ThreadRepository } from "../repositories/thread.repository";
 import type { CreateThreadData, UpdateThreadData, Thread } from "../domain";
-import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import { AuthorizationService } from "./authorization.service";
 
 export class ThreadService {
     constructor(
         private readonly threadRepository: ThreadRepository,
-        private readonly channelMemberRepository: ChannelMemberRepository
+        private readonly authorizationService: AuthorizationService
     ) { }
 
     async createThread(data: CreateThreadData): Promise<Thread> {
         try {
             // Verificar que el usuario sea miembro del canal
-            const isMember = await this.channelMemberRepository.isJoined(data.channelId, data.createdBy);
-            if (!isMember) {
-                throw new Error("User must be a member of the channel to create a thread");
-            }
+            await this.authorizationService.requireChannelMembership(data.channelId, data.createdBy);
 
             const thread = await this.threadRepository.create(data);
             return thread;
@@ -31,19 +28,13 @@ export class ThreadService {
                 throw new Error("Thread not found");
             }
 
-            // Verificar permisos: debe ser el creador o admin/moderator
-            const isMember = await this.channelMemberRepository.isJoined(thread.channelId, userId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
-
-            const hasPermission = 
-                thread.createdBy === userId ||
-                await this.channelMemberRepository.hasPermission(thread.channelId, userId, 'moderator');
-
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to update this thread");
-            }
+            // Verificar que es el creador o tiene permisos de moderador
+            await this.authorizationService.requireOwnerOrPermission(
+                thread.channelId,
+                userId,
+                thread.createdBy,
+                'moderator'
+            );
 
             const updatedThread = await this.threadRepository.update(id, data);
             if (!updatedThread) {
@@ -65,13 +56,12 @@ export class ThreadService {
             }
 
             // Solo admins o el creador pueden eliminar
-            const hasPermission = 
-                thread.createdBy === userId ||
-                await this.channelMemberRepository.hasPermission(thread.channelId, userId, 'admin');
-
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to delete this thread");
-            }
+            await this.authorizationService.requireOwnerOrPermission(
+                thread.channelId,
+                userId,
+                thread.createdBy,
+                'admin'
+            );
 
             await this.threadRepository.delete(id);
         } catch (error) {
@@ -83,10 +73,7 @@ export class ThreadService {
     async getThreadsByChannel(channelId: string, userId: string): Promise<Thread[]> {
         try {
             // Verificar que el usuario sea miembro
-            const isMember = await this.channelMemberRepository.isJoined(channelId, userId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
+            await this.authorizationService.requireChannelMembership(channelId, userId);
 
             return await this.threadRepository.findByChannel(channelId);
         } catch (error) {
@@ -97,10 +84,8 @@ export class ThreadService {
 
     async getActiveThreadsByChannel(channelId: string, userId: string): Promise<Thread[]> {
         try {
-            const isMember = await this.channelMemberRepository.isJoined(channelId, userId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
+            // Verificar que el usuario sea miembro
+            await this.authorizationService.requireChannelMembership(channelId, userId);
 
             return await this.threadRepository.findActiveByChannel(channelId);
         } catch (error) {
@@ -117,10 +102,7 @@ export class ThreadService {
             }
 
             // Solo admins pueden archivar
-            const hasPermission = await this.channelMemberRepository.hasPermission(thread.channelId, userId, 'admin');
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to archive this thread");
-            }
+            await this.authorizationService.requirePermission(thread.channelId, userId, 'admin');
 
             const archivedThread = await this.threadRepository.archive(id);
             if (!archivedThread) {
@@ -141,10 +123,8 @@ export class ThreadService {
                 throw new Error("Thread not found");
             }
 
-            const hasPermission = await this.channelMemberRepository.hasPermission(thread.channelId, userId, 'admin');
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to unarchive this thread");
-            }
+            // Solo admins pueden desarchivar
+            await this.authorizationService.requirePermission(thread.channelId, userId, 'admin');
 
             const unarchivedThread = await this.threadRepository.unarchive(id);
             if (!unarchivedThread) {
@@ -168,10 +148,7 @@ export class ThreadService {
             // Si userId es "system", bypass de permisos (para uso interno del gateway)
             if (userId !== "system") {
                 // Verificar que el usuario sea miembro del canal
-                const isMember = await this.channelMemberRepository.isJoined(thread.channelId, userId);
-                if (!isMember) {
-                    throw new Error("User is not a member of this channel");
-                }
+                await this.authorizationService.requireChannelMembership(thread.channelId, userId);
             }
 
             return thread;
@@ -181,3 +158,4 @@ export class ThreadService {
         }
     }
 }
+

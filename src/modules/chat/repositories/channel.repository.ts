@@ -4,12 +4,8 @@ import { db } from "../../../db";
 import { eq, sql } from "drizzle-orm";
 import type { Channel, CreateChannelData, UpdateChannelData } from "../domain";
 
-export type ChannelRow = {
-    channel: Channel;
-}
-
 export class ChannelRepository {
-    async create(data: CreateChannelData): Promise<ChannelRow> {
+    async create(data: CreateChannelData): Promise<Channel> {
         try {
             if (!data.ownerId) {
                 throw new Error("Owner ID is required");
@@ -23,16 +19,16 @@ export class ChannelRepository {
                 bannerUrl: data.bannerUrl,
                 category: data.category,
                 ownerId: data.ownerId,
-            }).returning(); //devuelve todo el objeto despues de insertar
+            }).returning();
 
-            return { channel: newChannel };
+            return newChannel;
         } catch (error) {
             console.error("Error creating channel:", error);
             throw error;
         }
     }
 
-    async update(id: string, data: UpdateChannelData): Promise<ChannelRow | undefined> {
+    async update(id: string, data: UpdateChannelData): Promise<Channel | undefined> {
         try {
             const updateData: Partial<typeof channels.$inferInsert> = {};
 
@@ -52,39 +48,35 @@ export class ChannelRepository {
                 .where(eq(channels.id, id))
                 .returning();
 
-            if (!updatedChannel) return undefined;
-
-            return { channel: updatedChannel };
+            return updatedChannel;
         } catch (error) {
             console.error(`Error updating channel with id ${id}:`, error);
             throw error;
         }
     }
 
-    async delete(id: string): Promise<ChannelRow | undefined> {
+    async delete(id: string): Promise<Channel | undefined> {
         try {
             const [deletedChannel] = await db
                 .delete(channels)
                 .where(eq(channels.id, id))
                 .returning();
 
-            if (!deletedChannel) return undefined;
-
-            return { channel: deletedChannel };
+            return deletedChannel;
         } catch (error) {
             console.error(`Error deleting channel with id ${id}:`, error);
             throw error;
         }
     }
 
-    async findById(id: string): Promise<ChannelRow | undefined> {
+    async findById(id: string): Promise<Channel | undefined> {
         try {
-            const [result] = await db
-                .select({ channel: channels })
+            const [channel] = await db
+                .select()
                 .from(channels)
                 .where(eq(channels.id, id));
 
-            return result;
+            return channel;
         } catch (error) {
             console.error(`Error finding channel with id ${id}:`, error);
             throw error;
@@ -93,12 +85,12 @@ export class ChannelRepository {
 
 
 
-    async findAll(page: number = 1, limit: number = 10): Promise<{ data: ChannelRow[], total: number }> {
+    async findAll(page: number = 1, limit: number = 10): Promise<{ data: Channel[], total: number }> {
         try {
             const offset = (page - 1) * limit;
 
             const [data, totalCount] = await Promise.all([
-                db.select({ channel: channels })
+                db.select()
                     .from(channels)
                     .limit(limit)
                     .offset(offset),

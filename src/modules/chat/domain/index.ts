@@ -6,3 +6,4 @@ export * from './channel.domain';
 export * from './thread.domain';
 export * from './message.domain';
 export * from './channel-member.domain';
+export * from './user.domain';
