@@ -3,17 +3,7 @@ import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "@/lib/r2";
 import { IUploadsService, ParsedFile } from "../services/upload.service";
 import { ValidateUploadDto } from "../dtos/validate-upload.dto";
 import { authMiddleware, type AuthVariables } from "@/middlewares/auth.middleware";
-import {
-    FileNotFoundError,
-    FileValidationError,
-    InvalidMimeTypeError,
-    FileSizeExceededError,
-    NoFileProvidedError,
-    MultipleFilesLimitError,
-    R2UploadError,
-    R2DeleteError
-} from "../errors/upload.errors";
-import { ZodError } from "zod";
+import { toHTTPException, NoFileProvidedError, MultipleFilesLimitError } from "../errors/upload.errors";
 
 const parseFile = async (file: File): Promise<ParsedFile> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -63,7 +53,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -89,7 +79,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -117,7 +107,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -143,7 +133,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -171,7 +161,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -197,7 +187,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -227,7 +217,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -256,7 +246,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -282,7 +272,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -312,7 +302,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -338,7 +328,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -368,7 +358,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -392,7 +382,7 @@ export class UploadController {
 
                 return c.json({ valid: isValid });
             } catch (error) {
-                return this.handleError(c, error);
+                throw toHTTPException(error);
             }
         });
 
@@ -442,72 +432,5 @@ export class UploadController {
                 },
             });
         });
-    }
-
-    private handleError(c: any, error: unknown) {
-        if (error instanceof FileNotFoundError) {
-            return c.json({ error: error.message }, 404);
-        }
-
-        if (error instanceof NoFileProvidedError) {
-            return c.json({ error: error.message }, 400);
-        }
-
-        if (error instanceof InvalidMimeTypeError) {
-            return c.json({ 
-                error: error.message,
-                details: {
-                    received: error.receivedType,
-                    allowed: error.allowedTypes
-                }
-            }, 400);
-        }
-
-        if (error instanceof FileSizeExceededError) {
-            return c.json({ 
-                error: error.message,
-                details: {
-                    fileSize: error.fileSize,
-                    maxSize: error.maxSize
-                }
-            }, 400);
-        }
-
-        if (error instanceof FileValidationError) {
-            return c.json({ 
-                error: error.message,
-                fileName: error.fileName
-            }, 400);
-        }
-
-        if (error instanceof MultipleFilesLimitError) {
-            return c.json({ 
-                error: error.message,
-                details: {
-                    received: error.receivedCount,
-                    max: error.maxCount
-                }
-            }, 400);
-        }
-
-        if (error instanceof R2UploadError) {
-            console.error("R2 upload error:", error.cause);
-            return c.json({ error: "Failed to upload file to storage" }, 500);
-        }
-
-        if (error instanceof R2DeleteError) {
-            console.error("R2 delete error:", error.cause);
-            return c.json({ error: "Failed to delete file from storage" }, 500);
-        }
-
-        if (error instanceof ZodError) {
-            return c.json({ 
-                error: "Validation error", 
-                details: error.issues 
-            }, 400);
-        }
-
-        console.error("Unexpected error:", error);
-        return c.json({ error: "Internal Server Error" }, 500);
     }
 }
