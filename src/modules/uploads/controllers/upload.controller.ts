@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "@/lib/r2";
-import { UploadService, ParsedFile } from "../services/upload.service";
+import { IUploadsService, ParsedFile } from "../services/upload.service";
 import { ValidateUploadDto } from "../dtos/validate-upload.dto";
-import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import { authMiddleware, type AuthVariables } from "@/middlewares/auth.middleware";
 import {
     FileNotFoundError,
     FileValidationError,
@@ -33,7 +33,7 @@ export class UploadController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
 
     constructor(
-        private readonly uploadService: UploadService
+        private readonly uploadService: IUploadsService
     ) {
         this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
