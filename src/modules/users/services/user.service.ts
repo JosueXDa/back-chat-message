@@ -1,36 +1,46 @@
 import { UpdateUserDto } from "../dtos/update-user.dto";
-import { UserRepository } from "../repositories/user.repository";
+import type { IUserRepository } from "../repositories/user.repository.interface";
 import type { UserWithProfile } from "../entities";
+import { UserNotFoundError } from "../errors/user.errors";
 
 export class UserService {
-    constructor(private readonly userRepository: UserRepository) { }
+    constructor(private readonly userRepository: IUserRepository) { }
 
     async getUsers(): Promise<UserWithProfile[]> {
         return await this.userRepository.findAll();
     }
 
-    async getUserById(id: string): Promise<UserWithProfile | null> {
+    async getUserById(id: string): Promise<UserWithProfile> {
         const user = await this.userRepository.findById(id);
-        return user ?? null;
+        
+        if (!user) {
+            throw new UserNotFoundError(id);
+        }
+        
+        return user;
     }
 
-    async updateUser(id: string, data: UpdateUserDto): Promise<UserWithProfile | null> {
+    async updateUser(id: string, data: UpdateUserDto): Promise<UserWithProfile> {
         const existing = await this.userRepository.findById(id);
         if (!existing) {
-            return null;
+            throw new UserNotFoundError(id);
         }
 
         const updated = await this.userRepository.update(id, data);
-        return updated ?? null;
+        
+        if (!updated) {
+            throw new UserNotFoundError(id);
+        }
+        
+        return updated;
     }
 
-    async deleteUser(id: string): Promise<boolean> {
+    async deleteUser(id: string): Promise<void> {
         const existing = await this.userRepository.findById(id);
         if (!existing) {
-            return false;
+            throw new UserNotFoundError(id);
         }
 
         await this.userRepository.delete(id);
-        return true;
     }
 }

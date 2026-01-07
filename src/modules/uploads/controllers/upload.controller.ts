@@ -1,18 +1,9 @@
 import { Hono } from "hono";
-import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "../../../lib/r2";
-import { auth as authType } from "../../../lib/auth";
+import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "@/lib/r2";
 import { UploadService, ParsedFile } from "../services/upload.service";
 import { ValidateUploadDto } from "../dtos/validate-upload.dto";
+import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
 
-type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
-
-type Variables = {
-    session: SessionContext;
-};
-
-/**
- * Parsea un archivo del FormData de Hono
- */
 const parseFile = async (file: File): Promise<ParsedFile> => {
     const arrayBuffer = await file.arrayBuffer();
     return {
@@ -23,41 +14,22 @@ const parseFile = async (file: File): Promise<ParsedFile> => {
     };
 };
 
-/**
- * Parsea múltiples archivos del FormData
- */
 const parseMultipleFiles = async (files: File[]): Promise<ParsedFile[]> => {
     return Promise.all(files.map(parseFile));
 };
 
 export class UploadController {
-    public readonly router: Hono<{ Variables: Variables }>;
+    public readonly router: Hono<{ Variables: AuthVariables }>;
 
     constructor(
-        private readonly uploadService: UploadService,
-        private readonly auth: typeof authType
+        private readonly uploadService: UploadService
     ) {
-        this.router = new Hono<{ Variables: Variables }>();
+        this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
-        // Middleware de autenticación
-        const authMiddleware = async (c: any, next: any) => {
-            const session = await this.auth.api.getSession({
-                headers: c.req.raw.headers,
-            });
-            if (!session) {
-                return c.json({ error: "No autorizado" }, 401);
-            }
-            c.set("session", session);
-            await next();
-        };
-
         this.router.use("/*", authMiddleware);
-
-        // ========== PROFILE UPLOADS ==========
-        
         /**
          * Sube un avatar de perfil
          * POST /uploads/profile/avatar

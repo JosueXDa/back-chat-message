@@ -66,9 +66,8 @@ const chatGateway = new ChatGateway(
 // Debug controller para monitorear el estado del gateway
 const debugController = new DebugController(chatGateway);
 
-// inyeccion de dependencias explicita para purebas
+// inyeccion de dependencias explicita para pruebas
 const customChatModule = new ChatModule({
-  auth,
   messageEventEmitter
 });
 

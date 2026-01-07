@@ -14,8 +14,6 @@ import { ThreadService } from "./services/thread.service";
 import { ThreadController } from "./controllers/thread.controller";
 import { AuthorizationService } from "./services/authorization.service";
 
-import { auth } from "../../lib/auth";
-
 type ChatModuleOptions = {
     repository?: ChannelRepository;
     service?: ChannelService;
@@ -31,7 +29,6 @@ type ChatModuleOptions = {
     controllerThread?: ThreadController;
     messageEventEmitter?: MessageEventEmitter;
     authorizationService?: AuthorizationService;
-    auth?: typeof auth;
 }
 
 export class ChatModule {
@@ -43,25 +40,20 @@ export class ChatModule {
     public readonly threadService: ThreadService;
 
     constructor(options: ChatModuleOptions = {}) {
-        const injectedAuth = options.auth ?? auth; // usar el inyectado o el default
-
         const repository = options.repository ?? new ChannelRepository();
         const service = options.service ?? new ChannelService(repository);
-        this.controller = options.controller ?? new ChannelController(service, injectedAuth);
+        this.controller = options.controller ?? new ChannelController(service);
 
         const repositoryMember = options.repositoryMember ?? new ChannelMemberRepository();
         const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember);
-        this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember, injectedAuth);
+        this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember);
 
-        // AuthorizationService - Centraliza validaciones de permisos
         const authorizationService = options.authorizationService ?? new AuthorizationService(repositoryMember);
 
-        // Thread setup
         const repositoryThread = options.repositoryThread ?? new ThreadRepository();
         this.threadService = options.serviceThread ?? new ThreadService(repositoryThread, authorizationService);
-        this.controllerThread = options.controllerThread ?? new ThreadController(this.threadService, injectedAuth);
+        this.controllerThread = options.controllerThread ?? new ThreadController(this.threadService);
 
-        // MessageEventEmitter es la FUENTE ÚNICA DE VERDAD para cambios en mensajes
         this.messageEventEmitter = options.messageEventEmitter ?? new MessageEventEmitter();
 
         const repositoryMessage = options.repositoryMessage ?? new MessageRepository();
@@ -71,7 +63,7 @@ export class ChatModule {
             authorizationService,
             this.messageEventEmitter
         );
-        this.controllerMessage = options.controllerMessage ?? new MessageController(serviceMessage, injectedAuth);
+        this.controllerMessage = options.controllerMessage ?? new MessageController(serviceMessage);
     }
 
     get router() {

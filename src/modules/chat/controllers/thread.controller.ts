@@ -1,49 +1,20 @@
 import { Hono } from "hono";
 import { ThreadService } from "../services/thread.service";
-import { auth as authType } from "../../../lib/auth";
 import { createThreadDto } from "../dtos/create-thread.dto";
 import { updateThreadDto } from "../dtos/update-thread.dto";
+import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
 
-type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
-
-type Variables = {
-    session: SessionContext;
-};
-
-/**
- * ThreadController
- * 
- * Gestiona los threads (hilos de conversación) dentro de cada canal.
- * Los threads permiten organizar conversaciones temáticas dentro de un canal.
- */
 export class ThreadController {
-    public readonly router: Hono<{ Variables: Variables }>;
+    public readonly router: Hono<{ Variables: AuthVariables }>;
 
     constructor(
-        private readonly threadService: ThreadService,
-        private readonly auth: typeof authType
+        private readonly threadService: ThreadService
     ) {
-        this.router = new Hono<{ Variables: Variables }>();
+        this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
-        // Middleware de autenticación
-        const authMiddleware = async (c: any, next: any) => {
-            const session = await this.auth.api.getSession({
-                headers: c.req.raw.headers,
-            });
-            if (!session) {
-                return c.json({ error: "Unauthorized" }, 401);
-            }
-            c.set("session", session);
-            await next();
-        };
-
-        /**
-         * GET /threads/channel/:channelId
-         * Obtiene todos los threads de un canal
-         */
         this.router.get("/channel/:channelId", authMiddleware, async (c) => {
             try {
                 const session = c.get("session");

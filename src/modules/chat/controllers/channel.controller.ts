@@ -1,39 +1,19 @@
 import { Hono } from "hono";
 import { ChannelService } from "../services/channel.service";
-import { auth as authType } from "../../../lib/auth";
 import { createChannelSchema } from "../dtos/create-channel.dto";
 import { updateChannelSchema } from "../dtos/update-channel.dto";
-
-type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
-
-type Variables = {
-    session: SessionContext;
-};
+import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
 
 export class ChannelController {
-    public readonly router: Hono<{ Variables: Variables }>;
+    public readonly router: Hono<{ Variables: AuthVariables }>;
 
-    constructor(private readonly channelService: ChannelService,
-        private readonly auth: typeof authType
+    constructor(private readonly channelService: ChannelService
     ) {
-        this.router = new Hono<{ Variables: Variables }>();
+        this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
-        // middleware de autenticacion
-        const authMiddleware = async (c: any, next: any) => {
-            const session = await this.auth.api.getSession({
-                headers: c.req.raw.headers,
-            });
-            if (!session) {
-                return c.json({
-                    error: "Unauthorized"
-                }, 401);
-            }
-            c.set("session", session);
-            await next();
-        };
 
         this.router.get("/", authMiddleware, async (c) => {
             try {

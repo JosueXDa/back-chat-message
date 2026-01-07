@@ -1,44 +1,19 @@
 import { ChannelMemberService } from "../services/channel-member.service";
 import { Hono } from "hono";
-import { auth as authType } from "../../../lib/auth";
 import { createMemberChannelDto } from "../dtos/create-member-cahnnel.dto";
 import { updateMemberRoleDto } from "../dtos/update-member-role.dto";
-
-type SessionContext = NonNullable<Awaited<ReturnType<typeof authType.api.getSession>>>;
-
-type Variables = {
-    session: SessionContext;
-};
+import { authMiddleware, type AuthVariables } from "@/middlewares/auth.middleware";
 
 export class ChannelMemberController {
-    public readonly router: Hono<{ Variables: Variables }>;
+    public readonly router: Hono<{ Variables: AuthVariables }>;
 
-    constructor(private readonly channelMemberService: ChannelMemberService,
-        private readonly auth: typeof authType
+    constructor(private readonly channelMemberService: ChannelMemberService
     ) {
-        this.router = new Hono<{ Variables: Variables }>();
+        this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
-        // middleware de autenticacion
-        const authMiddleware = async (c: any, next: any) => {
-            const session = await this.auth.api.getSession({
-                headers: c.req.raw.headers,
-            });
-            if (!session) {
-                return c.json({
-                    error: "Unauthorized"
-                }, 401);
-            }
-            c.set("session", session);
-            await next();
-        };
-
-        /**
-         * GET /members/joined
-         * Obtiene todos los canales a los que el usuario actual pertenece
-         */
         this.router.get("/joined", authMiddleware, async (c) => {
             try {
                 const session = c.get("session");
