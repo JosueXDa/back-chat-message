@@ -4,7 +4,7 @@ import { users } from "@/db/schema/users.entity";
 import { profile as profiles } from "@/db/schema/profile.entity";
 import { UpdateUserDto } from "@/users/dtos/update-user.dto";
 import type { User, Profile, UserWithProfile } from "@/users/entities";
-import type { IUserRepository } from "../user.repository.interface";
+import type { IUserRepository } from "../user.repository";
 import { ProfileCreationError, UserRepositoryError } from "@/users/errors/user.errors";
 
 export class UserRepositoryImpl implements IUserRepository {

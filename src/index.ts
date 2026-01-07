@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { cors } from 'hono/cors'
 import { upgradeWebSocket, websocket } from 'hono/bun'
 import type { ServerWebSocket } from 'bun'
@@ -20,6 +21,32 @@ import { AuthorizationService } from './modules/chat/services/authorization.serv
 import { DebugController } from './modules/chat/controllers/debug.controller'
 
 export const app = new Hono()
+
+// Configurar manejador global de errores de Hono
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    // Log de errores HTTPException para debugging
+    console.error(`[${err.status}] ${err.message}`, err.cause || '');
+    
+    // Obtener la respuesta personalizada del error
+    return err.getResponse();
+  }
+  
+  // Error inesperado
+  console.error('Unexpected error:', err);
+  return c.json({ 
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+  }, 500);
+});
+
+// Manejador de rutas no encontradas
+app.notFound((c) => {
+  return c.json({
+    error: 'Not Found',
+    path: c.req.path
+  }, 404);
+});
 
 
 app.use('/api/*', cors({

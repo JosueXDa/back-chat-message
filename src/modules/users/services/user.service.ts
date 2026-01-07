@@ -1,7 +1,7 @@
 import { UpdateUserDto } from "../dtos/update-user.dto";
-import type { IUserRepository } from "../repositories/user.repository.interface";
+import type { IUserRepository } from "../repositories/user.repository";
 import type { UserWithProfile } from "../entities";
-import { UserNotFoundError } from "../errors/user.errors";
+import { UserNotFoundError, UnauthorizedUserActionError } from "../errors/user.errors";
 
 export class UserService {
     constructor(private readonly userRepository: IUserRepository) { }
@@ -20,7 +20,12 @@ export class UserService {
         return user;
     }
 
-    async updateUser(id: string, data: UpdateUserDto): Promise<UserWithProfile> {
+    async updateUser(id: string, data: UpdateUserDto, currentUserId: string): Promise<UserWithProfile> {
+        // Validar autorización: solo el propio usuario puede actualizarse
+        if (currentUserId !== id) {
+            throw new UnauthorizedUserActionError(id, currentUserId, 'update');
+        }
+
         const existing = await this.userRepository.findById(id);
         if (!existing) {
             throw new UserNotFoundError(id);
@@ -35,7 +40,12 @@ export class UserService {
         return updated;
     }
 
-    async deleteUser(id: string): Promise<void> {
+    async deleteUser(id: string, currentUserId: string): Promise<void> {
+        // Validar autorización: solo el propio usuario puede eliminarse
+        if (currentUserId !== id) {
+            throw new UnauthorizedUserActionError(id, currentUserId, 'delete');
+        }
+
         const existing = await this.userRepository.findById(id);
         if (!existing) {
             throw new UserNotFoundError(id);

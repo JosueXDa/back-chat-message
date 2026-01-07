@@ -1,4 +1,4 @@
-import type { IUserRepository } from "./repositories/user.repository.interface";
+import type { IUserRepository } from "./repositories/user.repository";
 import { UserRepositoryImpl } from "./repositories/impl/user.repository.impl";
 import { UserService } from "./services/user.service";
 import { UserController } from "./controllers/user.controller";
