@@ -3,6 +3,17 @@ import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "@/lib/r2";
 import { UploadService, ParsedFile } from "../services/upload.service";
 import { ValidateUploadDto } from "../dtos/validate-upload.dto";
 import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import {
+    FileNotFoundError,
+    FileValidationError,
+    InvalidMimeTypeError,
+    FileSizeExceededError,
+    NoFileProvidedError,
+    MultipleFilesLimitError,
+    R2UploadError,
+    R2DeleteError
+} from "../errors/upload.errors";
+import { ZodError } from "zod";
 
 const parseFile = async (file: File): Promise<ParsedFile> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -41,7 +52,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -52,10 +63,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo avatar de perfil:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -70,7 +78,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -81,10 +89,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo banner de perfil:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -101,7 +106,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -112,10 +117,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo icono de canal:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -130,7 +132,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -141,10 +143,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo banner de canal:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -161,7 +160,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -172,10 +171,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo imagen de mensaje:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -190,7 +186,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -201,10 +197,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo adjunto de mensaje:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -219,11 +212,11 @@ export class UploadController {
                 const files = formData.getAll("files") as File[];
 
                 if (!files || files.length === 0) {
-                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 if (files.length > 10) {
-                    return c.json({ error: "Máximo 10 archivos por solicitud" }, 400);
+                    throw new MultipleFilesLimitError(files.length, 10);
                 }
 
                 const parsedFiles = await parseMultipleFiles(files);
@@ -234,10 +227,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                console.error("Error subiendo múltiples imágenes:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -250,13 +240,12 @@ export class UploadController {
             try {
                 const formData = await c.req.formData();
                 const files = formData.getAll("files") as File[];
-
                 if (!files || files.length === 0) {
-                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 if (files.length > 10) {
-                    return c.json({ error: "Máximo 10 archivos por solicitud" }, 400);
+                    throw new MultipleFilesLimitError(files.length, 10);
                 }
 
                 const parsedFiles = await parseMultipleFiles(files);
@@ -267,10 +256,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                console.error("Error subiendo múltiples adjuntos:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -285,7 +271,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -296,10 +282,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo video de mensaje:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -314,11 +297,11 @@ export class UploadController {
                 const files = formData.getAll("files") as File[];
 
                 if (!files || files.length === 0) {
-                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 if (files.length > 5) {
-                    return c.json({ error: "Máximo 5 videos por solicitud" }, 400);
+                    throw new MultipleFilesLimitError(files.length, 5);
                 }
 
                 const parsedFiles = await parseMultipleFiles(files);
@@ -329,10 +312,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                console.error("Error subiendo múltiples videos:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -347,7 +327,7 @@ export class UploadController {
                 const file = formData.get("file") as File | null;
 
                 if (!file) {
-                    return c.json({ error: "No se proporcionó ningún archivo" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 const parsedFile = await parseFile(file);
@@ -358,10 +338,7 @@ export class UploadController {
                     data: result,
                 });
             } catch (error) {
-                console.error("Error subiendo audio de mensaje:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -376,11 +353,11 @@ export class UploadController {
                 const files = formData.getAll("files") as File[];
 
                 if (!files || files.length === 0) {
-                    return c.json({ error: "No se proporcionaron archivos" }, 400);
+                    throw new NoFileProvidedError();
                 }
 
                 if (files.length > 5) {
-                    return c.json({ error: "Máximo 5 audios por solicitud" }, 400);
+                    throw new MultipleFilesLimitError(files.length, 5);
                 }
 
                 const parsedFiles = await parseMultipleFiles(files);
@@ -391,10 +368,7 @@ export class UploadController {
                     data: results,
                 });
             } catch (error) {
-                console.error("Error subiendo múltiples audios:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error subiendo archivos" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -411,17 +385,14 @@ export class UploadController {
                 const validation = ValidateUploadDto.safeParse(body);
 
                 if (!validation.success) {
-                    return c.json({ error: validation.error.issues }, 400);
+                    throw validation.error;
                 }
 
                 const isValid = await this.uploadService.validateUpload(validation.data);
 
                 return c.json({ valid: isValid });
             } catch (error) {
-                console.error("Error validando upload:", error);
-                return c.json({ 
-                    error: error instanceof Error ? error.message : "Error validando archivo" 
-                }, 400);
+                return this.handleError(c, error);
             }
         });
 
@@ -471,5 +442,72 @@ export class UploadController {
                 },
             });
         });
+    }
+
+    private handleError(c: any, error: unknown) {
+        if (error instanceof FileNotFoundError) {
+            return c.json({ error: error.message }, 404);
+        }
+
+        if (error instanceof NoFileProvidedError) {
+            return c.json({ error: error.message }, 400);
+        }
+
+        if (error instanceof InvalidMimeTypeError) {
+            return c.json({ 
+                error: error.message,
+                details: {
+                    received: error.receivedType,
+                    allowed: error.allowedTypes
+                }
+            }, 400);
+        }
+
+        if (error instanceof FileSizeExceededError) {
+            return c.json({ 
+                error: error.message,
+                details: {
+                    fileSize: error.fileSize,
+                    maxSize: error.maxSize
+                }
+            }, 400);
+        }
+
+        if (error instanceof FileValidationError) {
+            return c.json({ 
+                error: error.message,
+                fileName: error.fileName
+            }, 400);
+        }
+
+        if (error instanceof MultipleFilesLimitError) {
+            return c.json({ 
+                error: error.message,
+                details: {
+                    received: error.receivedCount,
+                    max: error.maxCount
+                }
+            }, 400);
+        }
+
+        if (error instanceof R2UploadError) {
+            console.error("R2 upload error:", error.cause);
+            return c.json({ error: "Failed to upload file to storage" }, 500);
+        }
+
+        if (error instanceof R2DeleteError) {
+            console.error("R2 delete error:", error.cause);
+            return c.json({ error: "Failed to delete file from storage" }, 500);
+        }
+
+        if (error instanceof ZodError) {
+            return c.json({ 
+                error: "Validation error", 
+                details: error.issues 
+            }, 400);
+        }
+
+        console.error("Unexpected error:", error);
+        return c.json({ error: "Internal Server Error" }, 500);
     }
 }
