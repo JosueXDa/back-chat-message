@@ -1,49 +1,56 @@
-import { profile as profiles } from "../../../db/schema/profile.entity";
-import { users } from "../../../db/schema/users.entity";
 import { UpdateUserDto } from "../dtos/update-user.dto";
-import { UserRepository, UserRow } from "../repositories/user.repository";
-
-export type UserWithProfile = typeof users.$inferSelect & {
-    profile: typeof profiles.$inferSelect | null;
-};
+import type { IUserRepository } from "../repositories/user.repository";
+import type { UserWithProfile } from "../entities";
+import { UserNotFoundError, UnauthorizedUserActionError } from "../errors/user.errors";
 
 export class UserService {
-    constructor(private readonly userRepository: UserRepository) { }
+    constructor(private readonly userRepository: IUserRepository) { }
 
     async getUsers(): Promise<UserWithProfile[]> {
-        const rows = await this.userRepository.findAll();
-        return rows.map((row) => this.mapRow(row));
+        return await this.userRepository.findAll();
     }
 
-    async getUserById(id: string): Promise<UserWithProfile | null> {
-        const row = await this.userRepository.findById(id);
-        return row ? this.mapRow(row) : null;
+    async getUserById(id: string): Promise<UserWithProfile> {
+        const user = await this.userRepository.findById(id);
+        
+        if (!user) {
+            throw new UserNotFoundError(id);
+        }
+        
+        return user;
     }
 
-    async updateUser(id: string, data: UpdateUserDto): Promise<UserWithProfile | null> {
-        const existing = await this.userRepository.findById(id);
-        if (!existing) {
-            return null;
+    async updateUser(id: string, data: UpdateUserDto, currentUserId: string): Promise<UserWithProfile> {
+        // Validar autorización: solo el propio usuario puede actualizarse
+        if (currentUserId !== id) {
+            throw new UnauthorizedUserActionError(id, currentUserId, 'update');
         }
 
-        const updatedRow = await this.userRepository.update(id, data);
-        return updatedRow ? this.mapRow(updatedRow) : null;
-    }
-
-    async deleteUser(id: string): Promise<boolean> {
         const existing = await this.userRepository.findById(id);
         if (!existing) {
-            return false;
+            throw new UserNotFoundError(id);
+        }
+
+        const updated = await this.userRepository.update(id, data);
+        
+        if (!updated) {
+            throw new UserNotFoundError(id);
+        }
+        
+        return updated;
+    }
+
+    async deleteUser(id: string, currentUserId: string): Promise<void> {
+        // Validar autorización: solo el propio usuario puede eliminarse
+        if (currentUserId !== id) {
+            throw new UnauthorizedUserActionError(id, currentUserId, 'delete');
+        }
+
+        const existing = await this.userRepository.findById(id);
+        if (!existing) {
+            throw new UserNotFoundError(id);
         }
 
         await this.userRepository.delete(id);
-        return true;
-    }
-
-    private mapRow(row: UserRow): UserWithProfile {
-        return {
-            ...row.user,
-            profile: row.profile,
-        };
     }
 }

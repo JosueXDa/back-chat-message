@@ -4,6 +4,7 @@ const profileUpdateSchema = z
     .object({
         displayName: z.string().min(1, "displayName is required"),
         avatarUrl: z.string().url().optional().nullable(),
+        bannerUrl: z.string().url().optional().nullable(),
         bio: z.string().max(500).optional().nullable(),
         age: z.number().int().nonnegative().optional().nullable(),
         isOnline: z.boolean().optional(),
@@ -13,7 +14,6 @@ const profileUpdateSchema = z
 const baseUpdateSchema = z.object({
     email: z.string().email().optional(),
     name: z.string().min(1).optional(),
-    image: z.string().url().optional().nullable(),
     emailVerified: z.boolean().optional(),
     profile: profileUpdateSchema.optional(),
 });
@@ -21,8 +21,8 @@ const baseUpdateSchema = z.object({
 const hasProfileChanges = (profile?: z.infer<typeof profileUpdateSchema>) => {
     if (!profile) {
         return false;
-    }
 
+    }
     return Object.values(profile).some((value) => value !== undefined);
 };
 

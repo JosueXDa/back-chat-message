@@ -1,68 +1,65 @@
 import { Hono } from "hono";
 import { updateUserSchema } from "../dtos/update-user.dto";
 import { UserService } from "../services/user.service";
+import { toHTTPException } from "../errors/user.errors";
+import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
 
 export class UserController {
-    public readonly router: Hono;
+    public readonly router: Hono<{ Variables: AuthVariables }>;
 
-    constructor(private readonly userService: UserService) {
-        this.router = new Hono();
+    constructor(
+        private readonly userService: UserService
+    ) {
+        this.router = new Hono<{ Variables: AuthVariables }>();
         this.registerRoutes();
     }
 
     private registerRoutes() {
-        this.router.get("/", async (c) => {
-            const users = await this.userService.getUsers();
-            return c.json(users);
-        });
 
-        this.router.get("/:id", async (c) => {
-            const id = c.req.param("id");
-            const user = await this.userService.getUserById(id);
-
-            if (!user) {
-                return c.json({ message: "User not found" }, 404);
-            }
-
-            return c.json(user);
-        });
-
-        this.router.patch("/:id", async (c) => {
-            const id = c.req.param("id");
-
-            let rawBody: unknown;
+        this.router.get("/", authMiddleware, async (c) => {
             try {
-                rawBody = await c.req.json();
-            } catch {
-                return c.json({ message: "Invalid JSON body" }, 400);
+                const users = await this.userService.getUsers();
+                return c.json(users);
+            } catch (error) {
+                throw toHTTPException(error);
             }
-
-            const parsed = updateUserSchema.safeParse(rawBody);
-            if (!parsed.success) {
-                return c.json({
-                    message: "Validation failed",
-                    errors: parsed.error.flatten(),
-                }, 400);
-            }
-
-            const updated = await this.userService.updateUser(id, parsed.data);
-
-            if (!updated) {
-                return c.json({ message: "User not found" }, 404);
-            }
-
-            return c.json(updated);
         });
 
-        this.router.delete("/:id", async (c) => {
-            const id = c.req.param("id");
-            const deleted = await this.userService.deleteUser(id);
-
-            if (!deleted) {
-                return c.json({ message: "User not found" }, 404);
+        this.router.get("/:id", authMiddleware, async (c) => {
+            try {
+                const id = c.req.param("id");
+                const user = await this.userService.getUserById(id);
+                return c.json(user);
+            } catch (error) {
+                throw toHTTPException(error);
             }
+        });
 
-            return c.json({ message: "User deleted" });
+        this.router.patch("/:id", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const id = c.req.param("id");
+
+                const body = await c.req.json();
+                const validatedData = updateUserSchema.parse(body);
+                const updated = await this.userService.updateUser(id, validatedData, session.user.id);
+
+                return c.json(updated);
+            } catch (error) {
+                throw toHTTPException(error);
+            }
+        });
+
+        this.router.delete("/:id", authMiddleware, async (c) => {
+            try {
+                const session = c.get("session");
+                const id = c.req.param("id");
+
+                await this.userService.deleteUser(id, session.user.id);
+                return c.json({ message: "User deleted" });
+            } catch (error) {
+                throw toHTTPException(error);
+            }
         });
     }
 }

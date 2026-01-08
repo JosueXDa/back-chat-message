@@ -1,40 +1,44 @@
 import { ServerWebSocket } from "bun";
 import { ConnectionManager } from "./connection.manager";
 import { MessageService } from "../services/message.service";
+import { ThreadService } from "../services/thread.service";
 import { ChannelMemberService } from "../services/channel-member.service";
-import { MessageEventEmitter, MessageCreatedEvent } from "../services/message-event.emitter";
+import { MessageEventEmitter, MessageCreatedEvent, MessageDeletedEvent } from "../services/message-event.emitter";
 import { createMessageDto } from "../dtos/create-message.dto";
-import { ServerNewMessageEvent, ClientMessage } from "../types/websocket-messages";
-import { users } from "../../../db/schema/users.entity";
-
-type User = typeof users.$inferSelect;
+import { ServerNewMessageEvent, ServerMessageDeletedEvent, ClientMessage } from "../interfaces/websocket-messages";
+import { User } from "../entities";
 
 /**
  * ChatGateway
  * 
- * Implementa Server-Driven State Synchronization:
+ * Implementa Server-Driven State Synchronization con Threads:
  * 1. El servidor es la ÚNICA FUENTE DE VERDAD
- * 2. Los clientes reciben confirmación por WebSocket
- * 3. El cliente actualiza su estado basado en los eventos del servidor
+ * 2. Los clientes se suscriben a THREADS específicos
+ * 3. Los mensajes pertenecen a threads dentro de canales
  * 
  * Flujo:
- * 1. Cliente: POST /api/messages (con tempId en UI)
- * 2. Servidor: Guarda en BD
- * 3. Servidor: Emite evento MESSAGE_CREATED por EventEmitter
- * 4. Gateway: Broadcast a todos los usuarios del canal
- * 5. Cliente: Recibe por WebSocket y reemplaza temp con real
+ * 1. Cliente: Se une a un thread via WebSocket (JOIN_THREAD)
+ * 2. Cliente: POST /api/messages con threadId
+ * 3. Servidor: Guarda en BD
+ * 4. Servidor: Emite evento MESSAGE_CREATED por EventEmitter
+ * 5. Gateway: Broadcast a todos los usuarios suscritos al thread
+ * 6. Cliente: Recibe por WebSocket y actualiza UI
  */
 export class ChatGateway {
-    // Mapeo: userId -> conjunto de channelIds a los que está suscrito
-    private userChannels: Map<string, Set<string>> = new Map();
+    // Mapeo: userId -> conjunto de threadIds a los que está suscrito
+    private userThreads: Map<string, Set<string>> = new Map();
     
-    // Mapeo: channelId -> callback del EventEmitter
-    // UNA ÚNICA suscripción por canal (no por usuario)
-    private channelSubscriptions: Map<string, (event: MessageCreatedEvent) => void> = new Map();
+    // Mapeo: threadId -> callback del EventEmitter para mensajes creados
+    // UNA ÚNICA suscripción por thread (no por usuario)
+    private threadSubscriptions: Map<string, (event: MessageCreatedEvent) => void> = new Map();
+    
+    // Mapeo: threadId -> callback del EventEmitter para mensajes eliminados
+    private threadDeleteSubscriptions: Map<string, (event: MessageDeletedEvent) => void> = new Map();
 
     constructor(
         private readonly connectionManager: ConnectionManager,
         private readonly messageService: MessageService,
+        private readonly threadService: ThreadService,
         private readonly channelMemberService: ChannelMemberService,
         private readonly eventEmitter: MessageEventEmitter
     ) { }
@@ -43,9 +47,9 @@ export class ChatGateway {
         const userId = ws.data.user.id;
         this.connectionManager.addConnection(userId, ws);
         
-        // Inicializar el Set de canales para este usuario si no existe
-        if (!this.userChannels.has(userId)) {
-            this.userChannels.set(userId, new Set());
+        // Inicializar el Set de threads para este usuario si no existe
+        if (!this.userThreads.has(userId)) {
+            this.userThreads.set(userId, new Set());
         }
         
         console.log(`✅ [WebSocket] User ${userId} connected (Total: ${this.connectionManager.getConnectedUsers().length} users)`);
@@ -54,16 +58,16 @@ export class ChatGateway {
     handleDisconnect(ws: ServerWebSocket<{ user: User }>) {
         const userId = ws.data.user.id;
         
-        // Limpiar suscripciones
-        const channels = this.userChannels.get(userId);
-        if (channels) {
-            console.log(`🧹 [Cleanup] Removing user ${userId} from ${channels.size} channels`);
-            channels.forEach(channelId => {
-                this.unsubscribeFromChannel(userId, channelId);
+        // Limpiar suscripciones a threads
+        const threads = this.userThreads.get(userId);
+        if (threads) {
+            console.log(`🧹 [Cleanup] Removing user ${userId} from ${threads.size} threads`);
+            threads.forEach(threadId => {
+                this.unsubscribeFromThread(userId, threadId);
             });
         }
         
-        this.userChannels.delete(userId);
+        this.userThreads.delete(userId);
         this.connectionManager.removeConnection(userId);
         
         console.log(`🔌 [WebSocket] User ${userId} disconnected (Remaining: ${this.connectionManager.getConnectedUsers().length} users)`);
@@ -74,11 +78,11 @@ export class ChatGateway {
             const parsedMessage = JSON.parse(message.toString()) as ClientMessage;
 
             switch (parsedMessage.type) {
-                case "JOIN_CHANNEL":
-                    await this.handleJoinChannel(ws.data.user.id, parsedMessage.payload.channelId);
+                case "JOIN_THREAD":
+                    await this.handleJoinThread(ws.data.user.id, parsedMessage.payload.threadId);
                     break;
-                case "LEAVE_CHANNEL":
-                    await this.handleLeaveChannel(ws.data.user.id, parsedMessage.payload.channelId);
+                case "LEAVE_THREAD":
+                    await this.handleLeaveThread(ws.data.user.id, parsedMessage.payload.threadId);
                     break;
                 case "SEND_MESSAGE":
                     await this.handleSendMessage(ws.data.user, parsedMessage.payload);
@@ -96,20 +100,34 @@ export class ChatGateway {
     }
 
     /**
-     * Suscribir usuario a un canal
-     * A partir de aquí, recibirá eventos de NEW_MESSAGE para este canal
+     * Suscribir usuario a un thread
+     * A partir de aquí, recibirá eventos de NEW_MESSAGE para este thread
      */
-    private async handleJoinChannel(userId: string, channelId: string) {
-        console.log(`🔵 [JOIN_CHANNEL] User ${userId} requesting to join channel ${channelId}`);
-        this.subscribeToChannel(userId, channelId);
+    private async handleJoinThread(userId: string, threadId: string) {
+        console.log(`🔵 [JOIN_THREAD] User ${userId} requesting to join thread ${threadId}`);
+        
+        try {
+            // Verificar que el thread existe y el usuario tiene acceso
+            const thread = await this.threadService.getThreadById(threadId, userId);
+            this.subscribeToThread(userId, threadId);
+        } catch (error: any) {
+            console.error(`❌ [JOIN_THREAD] Error:`, error.message);
+            const ws = this.connectionManager.getConnection(userId);
+            if (ws) {
+                ws.send(JSON.stringify({
+                    type: "ERROR",
+                    payload: { message: error.message || "Cannot join thread" }
+                }));
+            }
+        }
     }
 
     /**
-     * Des-suscribir usuario de un canal
+     * Des-suscribir usuario de un thread
      */
-    private async handleLeaveChannel(userId: string, channelId: string) {
-        console.log(`🔴 [LEAVE_CHANNEL] User ${userId} requesting to leave channel ${channelId}`);
-        this.unsubscribeFromChannel(userId, channelId);
+    private async handleLeaveThread(userId: string, threadId: string) {
+        console.log(`🔴 [LEAVE_THREAD] User ${userId} requesting to leave thread ${threadId}`);
+        this.unsubscribeFromThread(userId, threadId);
     }
 
     /**
@@ -135,80 +153,98 @@ export class ChatGateway {
     }
 
     /**
-     * Suscribir un usuario a los eventos de un canal
-     * Solo crea UNA suscripción al EventEmitter por canal (compartida por todos los usuarios)
+     * Suscribir un usuario a los eventos de un thread
+     * Solo crea UNA suscripción al EventEmitter por thread (compartida por todos los usuarios)
      */
-    private subscribeToChannel(userId: string, channelId: string) {
-        const channels = this.userChannels.get(userId);
-        if (!channels) return;
+    private subscribeToThread(userId: string, threadId: string) {
+        const threads = this.userThreads.get(userId);
+        if (!threads) return;
 
-        // Si el usuario ya está suscrito a este canal, no hacer nada
-        if (channels.has(channelId)) {
-            console.log(`⚠️ [Channel] User ${userId} already subscribed to channel ${channelId}`);
+        // Si el usuario ya está suscrito a este thread, no hacer nada
+        if (threads.has(threadId)) {
+            console.log(`⚠️ [Thread] User ${userId} already subscribed to thread ${threadId}`);
             return;
         }
 
-        channels.add(channelId);
-        console.log(`✅ [Channel] User ${userId} subscribed to channel ${channelId}`);
+        threads.add(threadId);
+        console.log(`✅ [Thread] User ${userId} subscribed to thread ${threadId}`);
 
-        // Si ya existe una suscripción para este canal, no crear otra
-        if (this.channelSubscriptions.has(channelId)) {
-            console.log(`ℹ️ [Channel] Channel ${channelId} already has an active subscription`);
+        // Si ya existe una suscripción para este thread, no crear otra
+        if (this.threadSubscriptions.has(threadId)) {
+            console.log(`ℹ️ [Thread] Thread ${threadId} already has an active subscription`);
             return;
         }
 
-        // Crear UNA ÚNICA suscripción al EventEmitter para este canal
-        const callback = (event: MessageCreatedEvent) => {
-            this.broadcastMessageToChannel(channelId, event);
+        // Crear UNA ÚNICA suscripción al EventEmitter para este thread
+        const createdCallback = (event: MessageCreatedEvent) => {
+            this.broadcastMessageToThread(threadId, event);
+        };
+        
+        const deletedCallback = (event: MessageDeletedEvent) => {
+            this.broadcastMessageDeletedToThread(threadId, event);
         };
 
-        this.channelSubscriptions.set(channelId, callback);
-        this.eventEmitter.subscribeToChannel(channelId, callback);
+        this.threadSubscriptions.set(threadId, createdCallback);
+        this.threadDeleteSubscriptions.set(threadId, deletedCallback);
+        this.eventEmitter.subscribeToThread(threadId, createdCallback);
+        this.eventEmitter.subscribeToThreadDeletes(threadId, deletedCallback);
         
-        console.log(`🔔 [EventEmitter] Subscribed to channel ${channelId} events`);
+        console.log(`🔔 [EventEmitter] Subscribed to thread ${threadId} events`);
     }
 
     /**
-     * Des-suscribirse de los eventos de un canal
-     * Solo elimina la suscripción del EventEmitter cuando NO quedan usuarios en el canal
+     * Des-suscribirse de los eventos de un thread
+     * Solo elimina la suscripción del EventEmitter cuando NO quedan usuarios en el thread
      */
-    private unsubscribeFromChannel(userId: string, channelId: string) {
-        const channels = this.userChannels.get(userId);
-        if (!channels) return;
+    private unsubscribeFromThread(userId: string, threadId: string) {
+        const threads = this.userThreads.get(userId);
+        if (!threads) return;
 
-        if (!channels.has(channelId)) return;
+        if (!threads.has(threadId)) return;
 
-        channels.delete(channelId);
-        console.log(`🔌 [Channel] User ${userId} unsubscribed from channel ${channelId}`);
+        threads.delete(threadId);
+        console.log(`🔌 [Thread] User ${userId} unsubscribed from thread ${threadId}`);
 
-        // Verificar si todavía hay otros usuarios suscritos a este canal
-        const hasOtherSubscribers = Array.from(this.userChannels.values())
-            .some(userChannelSet => userChannelSet.has(channelId));
+        // Verificar si todavía hay otros usuarios suscritos a este thread
+        const hasOtherSubscribers = Array.from(this.userThreads.values())
+            .some(userThreadSet => userThreadSet.has(threadId));
 
         // Si NO hay más usuarios suscritos, eliminar la suscripción del EventEmitter
         if (!hasOtherSubscribers) {
-            const callback = this.channelSubscriptions.get(channelId);
-            if (callback) {
-                this.eventEmitter.unsubscribeFromChannel(channelId, callback);
-                this.channelSubscriptions.delete(channelId);
-                console.log(`🔕 [EventEmitter] Unsubscribed from channel ${channelId} events (no more users)`);
+            const createdCallback = this.threadSubscriptions.get(threadId);
+            const deletedCallback = this.threadDeleteSubscriptions.get(threadId);
+            
+            if (createdCallback) {
+                this.eventEmitter.unsubscribeFromThread(threadId, createdCallback);
+                this.threadSubscriptions.delete(threadId);
             }
+            
+            if (deletedCallback) {
+                this.eventEmitter.unsubscribeFromThreadDeletes(threadId, deletedCallback);
+                this.threadDeleteSubscriptions.delete(threadId);
+            }
+            
+            console.log(`🔕 [EventEmitter] Unsubscribed from thread ${threadId} events (no more users)`);
         } else {
-            console.log(`ℹ️ [Channel] Channel ${channelId} still has other subscribed users`);
+            console.log(`ℹ️ [Thread] Thread ${threadId} still has other subscribed users`);
         }
     }
 
     /**
-     * Broadcast de un mensaje a todos los usuarios del canal
+     * Broadcast de un mensaje a todos los usuarios del thread
      * Este es el ÚNICO lugar donde se envían NEW_MESSAGE eventos al cliente
-     * Se llama UNA SOLA VEZ por mensaje (gracias a la suscripción única por canal)
+     * Se llama UNA SOLA VEZ por mensaje (gracias a la suscripción única por thread)
      */
-    private async broadcastMessageToChannel(channelId: string, messageEvent: MessageCreatedEvent) {
+    private async broadcastMessageToThread(threadId: string, messageEvent: MessageCreatedEvent) {
         try {
-            console.log(`📢 [Broadcast] Starting broadcast for message ${messageEvent.id} in channel ${channelId}`);
+            console.log(`📢 [Broadcast] Starting broadcast for message ${messageEvent.id} in thread ${threadId}`);
             
-            // Obtener información del sender
-            const members = await this.channelMemberService.getMembersByChannelId(channelId);
+            // Obtener el thread para saber a qué canal pertenece
+            const thread = await this.threadService.getThreadById(threadId, "system"); // system bypass permission check
+            if (!thread) {
+                console.error(`❌ [Broadcast] Thread ${threadId} not found`);
+                return;
+            }
 
             // Construir el payload con información del usuario
             const response: ServerNewMessageEvent = {
@@ -216,34 +252,67 @@ export class ChatGateway {
                 payload: {
                     id: messageEvent.id,
                     content: messageEvent.content,
+                    attachments: messageEvent.attachments,
                     senderId: messageEvent.senderId,
-                    channelId: messageEvent.channelId,
+                    threadId: messageEvent.threadId,
                     createdAt: messageEvent.createdAt.toISOString(),
-                    // Nota: En producción, obtener datos reales del usuario
-                    sender: {
-                        id: messageEvent.senderId,
-                        name: "User", // TODO: obtener del servicio de usuarios
-                        image: null
-                    }
+                    sender: messageEvent.sender
                 }
             };
 
             const responseString = JSON.stringify(response);
             let sentCount = 0;
 
-            // Enviar a TODOS los miembros del canal que están conectados
-            members.forEach(member => {
-                const memberWs = this.connectionManager.getConnection(member.member.userId);
-                if (memberWs && memberWs.readyState === 1) { // 1 = Open
-                    memberWs.send(responseString);
-                    sentCount++;
-                    console.log(`📤 [Broadcast] Message ${messageEvent.id} sent to user ${member.member.userId}`);
+            // Enviar a TODOS los usuarios suscritos a este thread que están conectados
+            this.userThreads.forEach((threads, userId) => {
+                if (threads.has(threadId)) {
+                    const ws = this.connectionManager.getConnection(userId);
+                    if (ws && ws.readyState === 1) { // 1 = Open
+                        ws.send(responseString);
+                        sentCount++;
+                        console.log(`📤 [Broadcast] Message ${messageEvent.id} sent to user ${userId}`);
+                    }
                 }
             });
             
-            console.log(`✅ [Broadcast] Completed: message ${messageEvent.id} sent to ${sentCount} users in channel ${channelId}`);
+            console.log(`✅ [Broadcast] Completed: message ${messageEvent.id} sent to ${sentCount} users in thread ${threadId}`);
         } catch (error) {
-            console.error(`❌ [Broadcast] Error broadcasting message to channel ${channelId}:`, error);
+            console.error(`❌ [Broadcast] Error broadcasting message to thread ${threadId}:`, error);
+        }
+    }
+
+    /**
+     * Broadcast de eliminación de mensaje a todos los usuarios del thread
+     */
+    private async broadcastMessageDeletedToThread(threadId: string, messageEvent: MessageDeletedEvent) {
+        try {
+            console.log(`📢 [Broadcast] Starting broadcast for deleted message ${messageEvent.id} in thread ${threadId}`);
+            
+            const response: ServerMessageDeletedEvent = {
+                type: "MESSAGE_DELETED",
+                payload: {
+                    id: messageEvent.id,
+                    threadId: messageEvent.threadId,
+                }
+            };
+
+            const responseString = JSON.stringify(response);
+            let sentCount = 0;
+
+            // Enviar a TODOS los usuarios suscritos a este thread
+            this.userThreads.forEach((threads, userId) => {
+                if (threads.has(threadId)) {
+                    const ws = this.connectionManager.getConnection(userId);
+                    if (ws && ws.readyState === 1) {
+                        ws.send(responseString);
+                        sentCount++;
+                    }
+                }
+            });
+            
+            console.log(`✅ [Broadcast] Completed: deleted message ${messageEvent.id} broadcasted to ${sentCount} users`);
+        } catch (error) {
+            console.error(`❌ [Broadcast] Error broadcasting delete to thread ${threadId}:`, error);
         }
     }
 
@@ -251,26 +320,26 @@ export class ChatGateway {
      * Método de depuración para monitorear el estado interno del gateway
      */
     getDebugInfo() {
-        const channelStats = Array.from(this.channelSubscriptions.keys()).map(channelId => {
-            const subscribedUsers = Array.from(this.userChannels.entries())
-                .filter(([_, channels]) => channels.has(channelId))
+        const threadStats = Array.from(this.threadSubscriptions.keys()).map(threadId => {
+            const subscribedUsers = Array.from(this.userThreads.entries())
+                .filter(([_, threads]) => threads.has(threadId))
                 .map(([userId, _]) => userId);
             
             return {
-                channelId,
+                threadId,
                 subscribedUsers,
                 userCount: subscribedUsers.length,
-                hasEventSubscription: this.channelSubscriptions.has(channelId)
+                hasEventSubscription: this.threadSubscriptions.has(threadId)
             };
         });
 
         return {
             totalConnectedUsers: this.connectionManager.getConnectedUsers().length,
-            totalChannelSubscriptions: this.channelSubscriptions.size,
-            channels: channelStats,
-            userChannels: Array.from(this.userChannels.entries()).map(([userId, channels]) => ({
+            totalThreadSubscriptions: this.threadSubscriptions.size,
+            threads: threadStats,
+            userThreads: Array.from(this.userThreads.entries()).map(([userId, threads]) => ({
                 userId,
-                channels: Array.from(channels)
+                threads: Array.from(threads)
             }))
         };
     }

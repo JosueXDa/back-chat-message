@@ -7,6 +7,7 @@ export const profile = pgTable('profiles', {
     userId: text('user_id').references(() => users.id).notNull().unique(),
     displayName: text('display_name').notNull(),
     avatarUrl: text('avatar_url'),
+    bannerUrl: text('banner_url'),
     bio: text('bio'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

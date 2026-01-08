@@ -1,40 +1,47 @@
+import { MessageAttachment } from "../entities/message.entity";
+
 /**
  * WebSocket Message Types
  * 
  * Define los tipos de mensajes que se intercambian entre cliente y servidor
  * Sigue el patrón: { type: string, payload: unknown }
+ * 
+ * ARQUITECTURA CON THREADS:
+ * - Los usuarios se unen a THREADS (no directamente a canales)
+ * - Los mensajes pertenecen a THREADS
+ * - Un canal puede tener múltiples threads
  */
 
 // ============================================================================
 // CLIENT -> SERVER (El cliente envía estos eventos)
 // ============================================================================
 
-export interface JoinChannelMessage {
-    type: "JOIN_CHANNEL";
+export interface JoinThreadMessage {
+    type: "JOIN_THREAD";
     payload: {
-        channelId: string;
+        threadId: string;
     };
 }
 
-export interface LeaveChannelMessage {
-    type: "LEAVE_CHANNEL";
+export interface LeaveThreadMessage {
+    type: "LEAVE_THREAD";
     payload: {
-        channelId: string;
+        threadId: string;
     };
 }
 
 export interface SendMessageMessage {
     type: "SEND_MESSAGE";
     payload: {
-        channelId: string;
+        threadId: string;
         content: string;
         // idempotencyKey?: string; // Opcional: para deduplicación en el cliente
     };
 }
 
 export type ClientMessage =
-    | JoinChannelMessage
-    | LeaveChannelMessage
+    | JoinThreadMessage
+    | LeaveThreadMessage
     | SendMessageMessage;
 
 // ============================================================================
@@ -44,15 +51,18 @@ export type ClientMessage =
 export interface UserData {
     id: string;
     name: string;
-    image?: string | null;
+    profile: {
+        displayName: string;
+        avatarUrl: string | null;
+    }
 }
 
 /**
  * Evento: Nuevo mensaje creado
  * 
  * El servidor emite este evento cuando:
- * 1. Un mensaje fue guardado en la BD
- * 2. Es emitido a TODOS los miembros del canal (incluyendo el que lo envió)
+ * 1. Un mensaje fue guardado en la BD en un thread específico
+ * 2. Es emitido a TODOS los miembros del thread (incluyendo el que lo envió)
  * 
  * Este es el ÚNICO lugar donde el cliente debe actualizar su lista de mensajes.
  * El cliente reemplaza mensajes temporales con este mensaje real.
@@ -62,10 +72,23 @@ export interface ServerNewMessageEvent {
     payload: {
         id: string;
         content: string;
+        attachments: MessageAttachment[] | null;
         senderId: string;
-        channelId: string;
+        threadId: string;
         createdAt: string; // ISO 8601
         sender: UserData; // Información del usuario que envió
+    };
+}
+
+/**
+ * Evento: Mensaje eliminado
+ * Se emite cuando un mensaje es eliminado de un thread
+ */
+export interface ServerMessageDeletedEvent {
+    type: "MESSAGE_DELETED";
+    payload: {
+        id: string;
+        threadId: string;
     };
 }
 
@@ -83,6 +106,7 @@ export interface ServerErrorEvent {
 
 export type ServerMessage =
     | ServerNewMessageEvent
+    | ServerMessageDeletedEvent
     | ServerErrorEvent;
 
 // ============================================================================

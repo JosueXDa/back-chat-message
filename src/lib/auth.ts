@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { expo } from "@better-auth/expo";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db";
 import { users } from "../db/schema/users.entity";
@@ -39,12 +40,15 @@ export const auth = betterAuth({
             },
         },
     },
+    plugins: [
+        expo(),
+    ],
 
     trustedOrigins: ['http://localhost:3000', 'http://192.168.18.8:8081', 'http://localhost:8081'],
 
     emailAndPassword: {
         enabled: true,
-        minPasswordLength: 8,
+        minPasswordLength: 8
     },
 
     socialProviders: {
@@ -52,6 +56,12 @@ export const auth = betterAuth({
             enabled: true,
             clientId: process.env.GITHUB_CLIENT_ID as string,
             clientSecret: process.env.GITHUB_CLIENT_SECRET as string,
-        }
+        },
+        google: {
+            enabled: true,
+            prompt: 'select_account',
+            clientId: process.env.GOOGLE_CLIENT_ID as string,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+        },
     },
 });

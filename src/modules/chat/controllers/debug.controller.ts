@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { ChatGateway } from "../gateway/chat.gateway";
+import { toHTTPException } from "../errors/chat.errors";
 
 export class DebugController {
     public readonly router = new Hono();
@@ -22,11 +23,7 @@ export class DebugController {
                     timestamp: new Date().toISOString()
                 });
             } catch (error) {
-                console.error("Error getting debug info:", error);
-                return c.json({
-                    success: false,
-                    error: "Failed to get debug info"
-                }, 500);
+                throw toHTTPException(error);
             }
         });
     }
