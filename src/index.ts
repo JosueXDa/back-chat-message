@@ -11,14 +11,17 @@ import { uploadModule } from './modules/uploads/uploads.module'
 import { ChatGateway } from './modules/chat/gateway/chat.gateway'
 import { ConnectionManager } from './modules/chat/gateway/connection.manager'
 import { MessageService } from './modules/chat/services/message.service'
-import { MessageRepository } from './modules/chat/repositories/message.repository'
+import { IMessageRepository } from './modules/chat/repositories/message.repository'
 import { ChannelMemberService } from './modules/chat/services/channel-member.service'
-import { ChannelMemberRepository } from './modules/chat/repositories/channel-member.repository'
+import { IChannelMemberRepository } from './modules/chat/repositories/channel-member.repository'
 import { ThreadService } from './modules/chat/services/thread.service'
-import { ThreadRepository } from './modules/chat/repositories/thread.repository'
+import { IThreadRepository } from './modules/chat/repositories/thread.repository'
 import { MessageEventEmitter } from './modules/chat/services/message-event.emitter'
 import { AuthorizationService } from './modules/chat/services/authorization.service'
 import { DebugController } from './modules/chat/controllers/debug.controller'
+import { ThreadRepositoryImpl } from './modules/chat/repositories/impl/thread.repository.impl'
+import { ChannelMemberRepositoryImpl } from './modules/chat/repositories/impl/channel-member.repository.impl'
+import { MessageRepositoryImpl } from './modules/chat/repositories/impl/message.repository.impl'
 
 export const app = new Hono()
 
@@ -65,9 +68,9 @@ app.get('/api', (c) => {
 // Dependency Injection for WebSocket
 // MessageEventEmitter es el corazón del sistema: FUENTE ÚNICA DE VERDAD
 const messageEventEmitter = new MessageEventEmitter();
-const messageRepository = new MessageRepository();
-const channelMemberRepository = new ChannelMemberRepository();
-const threadRepository = new ThreadRepository();
+const messageRepository = new MessageRepositoryImpl();
+const channelMemberRepository = new ChannelMemberRepositoryImpl();
+const threadRepository = new ThreadRepositoryImpl();
 
 // AuthorizationService centraliza las validaciones de permisos
 const authorizationService = new AuthorizationService(channelMemberRepository);
@@ -79,7 +82,7 @@ const messageService = new MessageService(
   authorizationService,
   messageEventEmitter
 );
-const channelMemberService = new ChannelMemberService(channelMemberRepository);
+const channelMemberService = new ChannelMemberService(channelMemberRepository, authorizationService);
 const connectionManager = new ConnectionManager();
 
 const chatGateway = new ChatGateway(
