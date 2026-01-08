@@ -1,8 +1,8 @@
-import { db } from "../../../db/index";
-import { channelMembers } from "../../../db/schema/channel-members.entity";
-import { channels } from "../../../db/schema/channels.entity";
+import { db } from "@/db/index";
+import { channelMembers } from "@/db/schema/channel-members.entity";
+import { channels } from "@/db/schema/channels.entity";
 import { eq, and } from "drizzle-orm";
-import type { ChannelMember, ChannelRole, CreateChannelMemberData } from "../domain";
+import type { ChannelMember, ChannelRole, CreateChannelMemberData } from "../entities";
 
 export class ChannelMemberRepository {
     async create(data: CreateChannelMemberData): Promise<ChannelMember> {

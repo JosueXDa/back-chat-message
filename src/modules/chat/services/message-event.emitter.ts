@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { MessageWithSender, MessageAttachment } from "../domain/message.domain";
+import { MessageWithSender, MessageAttachment } from "../entities/message.entity";
 
 export interface MessageCreatedEvent {
     id: string;

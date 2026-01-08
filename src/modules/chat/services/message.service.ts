@@ -1,5 +1,5 @@
 import { MessageRepository } from "../repositories/message.repository";
-import type { CreateMessageData, Message, MessageWithSender } from "../domain";
+import type { CreateMessageData, Message, MessageWithSender } from "../entities";
 import { MessageEventEmitter } from "./message-event.emitter";
 import { ThreadRepository } from "../repositories/thread.repository";
 import { AuthorizationService } from "./authorization.service";

@@ -5,8 +5,8 @@ import { ThreadService } from "../services/thread.service";
 import { ChannelMemberService } from "../services/channel-member.service";
 import { MessageEventEmitter, MessageCreatedEvent, MessageDeletedEvent } from "../services/message-event.emitter";
 import { createMessageDto } from "../dtos/create-message.dto";
-import { ServerNewMessageEvent, ServerMessageDeletedEvent, ClientMessage } from "../types/websocket-messages";
-import { User } from "../domain";
+import { ServerNewMessageEvent, ServerMessageDeletedEvent, ClientMessage } from "../interfaces/websocket-messages";
+import { User } from "../entities";
 
 /**
  * ChatGateway

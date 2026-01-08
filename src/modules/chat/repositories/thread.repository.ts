@@ -1,7 +1,7 @@
-import { db } from "../../../db/index";
-import { threads } from "../../../db/schema/threads.entity";
+import { db } from "@/db/index";
+import { threads } from "@/db/schema/threads.entity";
 import { eq, desc, and } from "drizzle-orm";
-import type { Thread, CreateThreadData, UpdateThreadData } from "../domain";
+import type { Thread, CreateThreadData, UpdateThreadData } from "../entities";
 
 export class ThreadRepository {
     async create(data: CreateThreadData): Promise<Thread> {

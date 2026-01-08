@@ -1,4 +1,4 @@
-import { MessageAttachment } from "../domain/message.domain";
+import { MessageAttachment } from "../entities/message.entity";
 
 /**
  * WebSocket Message Types

@@ -1,8 +1,12 @@
 import { ChannelMemberRepository } from "../repositories/channel-member.repository";
-import type { ChannelMember, ChannelRole, CreateChannelMemberData, Channel } from "../domain";
+import type { ChannelMember, ChannelRole, CreateChannelMemberData, Channel } from "../entities";
+import { AuthorizationService } from "./authorization.service";
 
 export class ChannelMemberService {
-    constructor(private readonly channelMemberRepository: ChannelMemberRepository) { }
+    constructor(
+        private readonly channelMemberRepository: ChannelMemberRepository,
+        private readonly authorizationService: AuthorizationService
+    ) { }
 
     async createMember(data: CreateChannelMemberData, requestUserId: string): Promise<ChannelMember> {
         try {
@@ -15,10 +19,7 @@ export class ChannelMemberService {
             // Un usuario puede unirse a sí mismo, o un admin puede agregar a otros
             const isSelf = requestUserId === data.userId;
             if (!isSelf) {
-                const hasPermission = await this.channelMemberRepository.hasPermission(data.channelId, requestUserId, 'admin');
-                if (!hasPermission) {
-                    throw new Error("Insufficient permissions to add other members");
-                }
+                await this.authorizationService.requirePermission(data.channelId, requestUserId, 'admin');
             }
 
             return await this.channelMemberRepository.create(data);
@@ -31,10 +32,7 @@ export class ChannelMemberService {
     async updateMemberRole(channelId: string, userId: string, role: ChannelRole, requestUserId: string): Promise<ChannelMember> {
         try {
             // Solo admins pueden cambiar roles
-            const hasPermission = await this.channelMemberRepository.hasPermission(channelId, requestUserId, 'admin');
-            if (!hasPermission) {
-                throw new Error("Insufficient permissions to update roles");
-            }
+            await this.authorizationService.requirePermission(channelId, requestUserId, 'admin');
 
             const updated = await this.channelMemberRepository.updateRole(channelId, userId, role);
             if (!updated) {
@@ -51,11 +49,10 @@ export class ChannelMemberService {
     async deleteMember(channelId: string, userId: string, requestUserId: string): Promise<ChannelMember | undefined> {
         try {
             // Admins pueden remover a cualquiera, o el usuario puede removerse a sí mismo
-            const isAdmin = await this.channelMemberRepository.hasPermission(channelId, requestUserId, 'admin');
             const isSelf = requestUserId === userId;
-
-            if (!isAdmin && !isSelf) {
-                throw new Error("Insufficient permissions to remove this member");
+            
+            if (!isSelf) {
+                await this.authorizationService.requirePermission(channelId, requestUserId, 'admin');
             }
 
             return await this.channelMemberRepository.delete(channelId, userId);
@@ -68,10 +65,7 @@ export class ChannelMemberService {
     async getMembersByChannelId(channelId: string, requestUserId: string): Promise<ChannelMember[]> {
         try {
             // Solo miembros del canal pueden ver la lista
-            const isMember = await this.channelMemberRepository.isJoined(channelId, requestUserId);
-            if (!isMember) {
-                throw new Error("User is not a member of this channel");
-            }
+            await this.authorizationService.requireChannelMembership(channelId, requestUserId);
 
             return await this.channelMemberRepository.getMembersByChannelId(channelId);
         } catch (error) {

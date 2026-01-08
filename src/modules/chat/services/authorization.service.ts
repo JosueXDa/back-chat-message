@@ -4,22 +4,6 @@ import {
     InsufficientPermissionsError 
 } from "../errors/chat.errors";
 
-/**
- * AuthorizationService
- * 
- * Servicio centralizado para validación de permisos y autorización.
- * 
- * Principios aplicados:
- * - DRY (Don't Repeat Yourself): Evita duplicación de lógica de autorización
- * - Single Responsibility: Solo se encarga de validar permisos
- * - Fail Fast: Lanza excepciones inmediatamente si no hay permisos
- * 
- * Beneficios:
- * - Centraliza todas las validaciones de permisos
- * - Facilita cambios en la lógica de autorización
- * - Mejora la consistencia en mensajes de error
- * - Simplifica testing de permisos
- */
 export class AuthorizationService {
     constructor(
         private readonly channelMemberRepository: ChannelMemberRepository

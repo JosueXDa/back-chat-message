@@ -1,9 +1,9 @@
-import { db } from "../../../db/index";
-import { messages } from "../../../db/schema/messages.entity";
-import { users } from "../../../db/schema/users.entity";
-import { profile } from "../../../db/schema/profile.entity";
+import { db } from "@/db/index";
+import { messages } from "@/db/schema/messages.entity";
+import { users } from "@/db/schema/users.entity";
+import { profile } from "@/db/schema/profile.entity";
 import { eq, desc } from "drizzle-orm";
-import type { Message, CreateMessageData, MessageWithSender } from "../domain";
+import type { Message, CreateMessageData, MessageWithSender } from "../entities";
 
 export class MessageRepository {
     async create(data: CreateMessageData): Promise<Message> {

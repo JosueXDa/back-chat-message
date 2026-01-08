@@ -1,5 +1,5 @@
 import { ThreadRepository } from "../repositories/thread.repository";
-import type { CreateThreadData, UpdateThreadData, Thread } from "../domain";
+import type { CreateThreadData, UpdateThreadData, Thread } from "../entities";
 import { AuthorizationService } from "./authorization.service";
 
 export class ThreadService {

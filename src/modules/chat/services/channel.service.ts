@@ -1,5 +1,5 @@
 import { ChannelRepository } from "../repositories/channel.repository";
-import type { Channel, CreateChannelData, UpdateChannelData } from "../domain";
+import type { Channel, CreateChannelData, UpdateChannelData } from "../entities";
 import { ChannelNotFoundError, ChatRepositoryError } from "../errors/chat.errors";
 
 

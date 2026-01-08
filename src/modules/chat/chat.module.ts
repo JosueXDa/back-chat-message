@@ -45,10 +45,10 @@ export class ChatModule {
         this.controller = options.controller ?? new ChannelController(service);
 
         const repositoryMember = options.repositoryMember ?? new ChannelMemberRepository();
-        const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember);
-        this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember);
-
         const authorizationService = options.authorizationService ?? new AuthorizationService(repositoryMember);
+        
+        const serviceMember = options.serviceMember ?? new ChannelMemberService(repositoryMember, authorizationService);
+        this.controllerMember = options.controllerMember ?? new ChannelMemberController(serviceMember);
 
         const repositoryThread = options.repositoryThread ?? new ThreadRepository();
         this.threadService = options.serviceThread ?? new ThreadService(repositoryThread, authorizationService);
