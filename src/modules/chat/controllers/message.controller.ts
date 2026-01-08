@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { MessageService } from "../services/message.service";
 import { createMessageDto } from "../dtos/create-message.dto";
 import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import { toHTTPException } from "../errors/chat.errors";
 
 export class MessageController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
@@ -28,9 +29,8 @@ export class MessageController {
                 );
                 
                 return c.json(messages);
-            } catch (error: any) {
-                console.error("Error fetching messages:", error);
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -76,12 +76,8 @@ export class MessageController {
                 console.log(`✅ [API] Message created: ${message.id} in thread ${message.threadId}`);
                 
                 return c.json(message, 201);
-            } catch (error: any) {
-                console.error("Error creating message:", error);
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Invalid request data", details: error.errors }, 400);
-                }
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -97,11 +93,8 @@ export class MessageController {
                 await this.messageService.deleteMessage(id, session.user.id);
                 
                 return c.json({ message: "Message deleted successfully" });
-            } catch (error: any) {
-                console.error("Error deleting message:", error);
-                const status = error.message === "Message not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
     }

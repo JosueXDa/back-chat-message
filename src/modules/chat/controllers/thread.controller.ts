@@ -3,6 +3,7 @@ import { ThreadService } from "../services/thread.service";
 import { createThreadDto } from "../dtos/create-thread.dto";
 import { updateThreadDto } from "../dtos/update-thread.dto";
 import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import { toHTTPException } from "../errors/chat.errors";
 
 export class ThreadController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
@@ -26,9 +27,8 @@ export class ThreadController {
                 );
                 
                 return c.json(threads);
-            } catch (error: any) {
-                console.error("Error fetching threads:", error);
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -47,9 +47,8 @@ export class ThreadController {
                 );
                 
                 return c.json(threads);
-            } catch (error: any) {
-                console.error("Error fetching active threads:", error);
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -65,11 +64,8 @@ export class ThreadController {
                 const thread = await this.threadService.getThreadById(id, session.user.id);
                 
                 return c.json(thread);
-            } catch (error: any) {
-                console.error("Error fetching thread:", error);
-                const status = error.message === "Thread not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -98,12 +94,8 @@ export class ThreadController {
                 const thread = await this.threadService.createThread(validatedData);
                 
                 return c.json(thread, 201);
-            } catch (error: any) {
-                console.error("Error creating thread:", error);
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Invalid request data", details: error.errors }, 400);
-                }
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -134,14 +126,8 @@ export class ThreadController {
                 );
                 
                 return c.json(thread);
-            } catch (error: any) {
-                console.error("Error updating thread:", error);
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Invalid request data", details: error.errors }, 400);
-                }
-                const status = error.message === "Thread not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -157,11 +143,8 @@ export class ThreadController {
                 await this.threadService.deleteThread(id, session.user.id);
                 
                 return c.json({ message: "Thread deleted successfully" });
-            } catch (error: any) {
-                console.error("Error deleting thread:", error);
-                const status = error.message === "Thread not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -177,11 +160,8 @@ export class ThreadController {
                 const thread = await this.threadService.archiveThread(id, session.user.id);
                 
                 return c.json(thread);
-            } catch (error: any) {
-                console.error("Error archiving thread:", error);
-                const status = error.message === "Thread not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -197,11 +177,8 @@ export class ThreadController {
                 const thread = await this.threadService.unarchiveThread(id, session.user.id);
                 
                 return c.json(thread);
-            } catch (error: any) {
-                console.error("Error unarchiving thread:", error);
-                const status = error.message === "Thread not found" ? 404 : 
-                              error.message ? 403 : 500;
-                return c.json({ error: error.message || "Internal Server Error" }, status);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
     }

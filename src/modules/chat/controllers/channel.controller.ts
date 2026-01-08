@@ -3,6 +3,7 @@ import { ChannelService } from "../services/channel.service";
 import { createChannelSchema } from "../dtos/create-channel.dto";
 import { updateChannelSchema } from "../dtos/update-channel.dto";
 import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import { toHTTPException } from "../errors/chat.errors";
 
 export class ChannelController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
@@ -23,7 +24,7 @@ export class ChannelController {
                 const result = await this.channelService.getAllChannels(page, limit);
                 return c.json(result);
             } catch (error) {
-                return c.json({ error: "Internal Server Error" }, 500);
+                throw toHTTPException(error);
             }
         });
 
@@ -33,7 +34,7 @@ export class ChannelController {
                 const channel = await this.channelService.getChannelById(id);
                 return c.json(channel);
             } catch (error) {
-                return c.json({ error: "Internal Server Error" }, 500);
+                throw toHTTPException(error);
             }
         });
 
@@ -53,11 +54,8 @@ export class ChannelController {
                 
                 const channel = await this.channelService.createChannel(data);
                 return c.json(channel);
-            } catch (error: any) {
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Validation error", details: error.errors }, 400);
-                }
-                return c.json({ error: "Internal Server Error" }, 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -70,28 +68,19 @@ export class ChannelController {
                 const data = updateChannelSchema.parse(body);
                 
                 const channel = await this.channelService.updateChannel(id, data);
-                if (!channel) {
-                    return c.json({ message: "Channel not found" }, 404);
-                }
                 return c.json(channel);
-            } catch (error: any) {
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Validation error", details: error.errors }, 400);
-                }
-                return c.json({ error: "Internal Server Error" }, 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
         this.router.delete("/:id", authMiddleware, async (c) => {
             try {
                 const id = c.req.param("id");
-                const deleted = await this.channelService.deleteChannel(id);
-                if (!deleted) {
-                    return c.json({ message: "Channel not found" }, 404);
-                }
+                await this.channelService.deleteChannel(id);
                 return c.json({ message: "Channel deleted" });
             } catch (error) {
-                return c.json({ error: "Internal Server Error" }, 500);
+                throw toHTTPException(error);
             }
         });
     }

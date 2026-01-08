@@ -1,5 +1,6 @@
 import { ChannelRepository } from "../repositories/channel.repository";
 import type { Channel, CreateChannelData, UpdateChannelData } from "../domain";
+import { ChannelNotFoundError, ChatRepositoryError } from "../errors/chat.errors";
 
 
 export class ChannelService {
@@ -13,7 +14,7 @@ export class ChannelService {
             return newChannel;
         } catch (error) {
             console.error("Error in service creating channel:", error);
-            throw error;
+            throw new ChatRepositoryError("Failed to create channel", error);
         }
     }
 
@@ -36,40 +37,60 @@ export class ChannelService {
             };
         } catch (error) {
             console.error("Error in service getting all channels:", error);
-            throw error;
+            throw new ChatRepositoryError("Failed to get channels", error);
         }
     }
 
-    async getChannelById(id: string): Promise<Channel | null> {
+    async getChannelById(id: string): Promise<Channel> {
         try {
             const channel = await this.channelRepository.findById(id);
-            return channel || null;
+            
+            if (!channel) {
+                throw new ChannelNotFoundError(id);
+            }
+            
+            return channel;
         } catch (error) {
+            // Si ya es un error de dominio, propagarlo
+            if (error instanceof ChannelNotFoundError) {
+                throw error;
+            }
+            
             console.error(`Error in service getting channel ${id}:`, error);
-            throw error;
+            throw new ChatRepositoryError(`Failed to get channel ${id}`, error);
         }
     }
 
-    async updateChannel(id: string, data: UpdateChannelData): Promise<Channel | null> {
+    async updateChannel(id: string, data: UpdateChannelData): Promise<Channel> {
         try {
             const existing = await this.channelRepository.findById(id);
             if (!existing) {
-                return null;
+                throw new ChannelNotFoundError(id);
             }
 
             const updatedRow = await this.channelRepository.update(id, data);
-            return updatedRow || null;
+            
+            if (!updatedRow) {
+                throw new ChatRepositoryError(`Failed to update channel ${id}`);
+            }
+            
+            return updatedRow;
         } catch (error) {
+            // Si ya es un error de dominio, propagarlo
+            if (error instanceof ChannelNotFoundError || error instanceof ChatRepositoryError) {
+                throw error;
+            }
+            
             console.error(`Error in service updating channel ${id}:`, error);
-            throw error;
+            throw new ChatRepositoryError(`Failed to update channel ${id}`, error);
         }
     }
 
-    async deleteChannel(id: string): Promise<boolean> {
+    async deleteChannel(id: string): Promise<void> {
         try {
             const existing = await this.channelRepository.findById(id);
             if (!existing) {
-                return false;
+                throw new ChannelNotFoundError(id);
             }
 
             // CASCADE se encarga de eliminar:
@@ -77,10 +98,14 @@ export class ChannelService {
             // - threads
             //   - messages (de cada thread)
             await this.channelRepository.delete(id);
-            return true;
         } catch (error) {
+            // Si ya es un error de dominio, propagarlo
+            if (error instanceof ChannelNotFoundError) {
+                throw error;
+            }
+            
             console.error(`Error in service deleting channel ${id}:`, error);
-            throw error;
+            throw new ChatRepositoryError(`Failed to delete channel ${id}`, error);
         }
     }
 }

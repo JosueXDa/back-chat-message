@@ -1,4 +1,8 @@
 import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import { 
+    UnauthorizedChannelAccessError, 
+    InsufficientPermissionsError 
+} from "../errors/chat.errors";
 
 /**
  * AuthorizationService
@@ -27,12 +31,12 @@ export class AuthorizationService {
      * 
      * @param channelId - ID del canal
      * @param userId - ID del usuario
-     * @throws Error si el usuario no es miembro del canal
+     * @throws UnauthorizedChannelAccessError si el usuario no es miembro del canal
      */
     async requireChannelMembership(channelId: string, userId: string): Promise<void> {
         const isMember = await this.channelMemberRepository.isJoined(channelId, userId);
         if (!isMember) {
-            throw new Error("User is not a member of this channel");
+            throw new UnauthorizedChannelAccessError(channelId, userId);
         }
     }
 
@@ -43,12 +47,12 @@ export class AuthorizationService {
      * @param channelId - ID del canal
      * @param userId - ID del usuario
      * @param level - Nivel de permiso requerido ('moderator' | 'admin')
-     * @throws Error si el usuario no tiene los permisos requeridos
+     * @throws InsufficientPermissionsError si el usuario no tiene los permisos requeridos
      */
     async requirePermission(channelId: string, userId: string, level: 'moderator' | 'admin'): Promise<void> {
         const hasPermission = await this.channelMemberRepository.hasPermission(channelId, userId, level);
         if (!hasPermission) {
-            throw new Error(`Insufficient permissions: ${level} role required`);
+            throw new InsufficientPermissionsError(level, 'perform this action');
         }
     }
 
@@ -60,7 +64,7 @@ export class AuthorizationService {
      * @param userId - ID del usuario a validar
      * @param creatorId - ID del creador del recurso
      * @param level - Nivel de permiso alternativo requerido (default: 'moderator')
-     * @throws Error si el usuario no es creador ni tiene permisos
+     * @throws InsufficientPermissionsError si el usuario no es creador ni tiene permisos
      */
     async requireOwnerOrPermission(
         channelId: string,
@@ -76,7 +80,7 @@ export class AuthorizationService {
         // Si no es creador, verificar permisos
         const hasPermission = await this.channelMemberRepository.hasPermission(channelId, userId, level);
         if (!hasPermission) {
-            throw new Error(`Insufficient permissions: must be owner or have ${level} role`);
+            throw new InsufficientPermissionsError(level, `access this resource as owner or ${level}`);
         }
     }
 

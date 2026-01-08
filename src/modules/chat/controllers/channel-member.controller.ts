@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { createMemberChannelDto } from "../dtos/create-member-cahnnel.dto";
 import { updateMemberRoleDto } from "../dtos/update-member-role.dto";
 import { authMiddleware, type AuthVariables } from "@/middlewares/auth.middleware";
+import { toHTTPException } from "../errors/chat.errors";
 
 export class ChannelMemberController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
@@ -20,7 +21,7 @@ export class ChannelMemberController {
                 const channels = await this.channelMemberService.getChannelsByUserId(session.user.id);
                 return c.json(channels);
             } catch (error) {
-                return c.json({ error: "Internal Server Error" }, 500);
+                throw toHTTPException(error);
             }
         });
 
@@ -39,8 +40,8 @@ export class ChannelMemberController {
                 );
                 
                 return c.json(members);
-            } catch (error: any) {
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -55,13 +56,9 @@ export class ChannelMemberController {
                 
                 const role = await this.channelMemberService.getMemberRole(channelId, userId);
                 
-                if (!role) {
-                    return c.json({ error: "Member not found" }, 404);
-                }
-                
                 return c.json({ role });
-            } catch (error: any) {
-                return c.json({ error: error.message || "Internal Server Error" }, 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -93,12 +90,8 @@ export class ChannelMemberController {
                 );
                 
                 return c.json(member, 201);
-            } catch (error: any) {
-                console.error("Error adding member:", error);
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Invalid request data", details: error.errors }, 400);
-                }
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -129,12 +122,8 @@ export class ChannelMemberController {
                 );
                 
                 return c.json(updatedMember);
-            } catch (error: any) {
-                console.error("Error updating role:", error);
-                if (error.name === "ZodError") {
-                    return c.json({ error: "Validation error", details: error.errors }, 400);
-                }
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -150,20 +139,15 @@ export class ChannelMemberController {
                 const channelId = c.req.param("channelId");
                 const userId = c.req.param("userId");
                 
-                const deleted = await this.channelMemberService.deleteMember(
+                await this.channelMemberService.deleteMember(
                     channelId,
                     userId,
                     session.user.id
                 );
                 
-                if (!deleted) {
-                    return c.json({ message: "Member not found" }, 404);
-                }
-                
                 return c.json({ message: "Member removed successfully" });
-            } catch (error: any) {
-                console.error("Error removing member:", error);
-                return c.json({ error: error.message || "Internal Server Error" }, error.message ? 403 : 500);
+            } catch (error) {
+                throw toHTTPException(error);
             }
         });
 
@@ -178,7 +162,7 @@ export class ChannelMemberController {
                 const isJoined = await this.channelMemberService.isJoined(channelId, session.user.id);
                 return c.json({ isJoined });
             } catch (error) {
-                return c.json({ error: "Internal Server Error" }, 500);
+                throw toHTTPException(error);
             }
         });
     }
