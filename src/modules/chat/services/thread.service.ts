@@ -1,10 +1,10 @@
-import { ThreadRepository } from "../repositories/thread.repository";
+import type { IThreadRepository } from "../repositories/thread.repository";
 import type { CreateThreadData, UpdateThreadData, Thread } from "../entities";
 import { AuthorizationService } from "./authorization.service";
 
 export class ThreadService {
     constructor(
-        private readonly threadRepository: ThreadRepository,
+        private readonly threadRepository: IThreadRepository,
         private readonly authorizationService: AuthorizationService
     ) { }
 

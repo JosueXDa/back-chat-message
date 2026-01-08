@@ -1,13 +1,13 @@
-import { MessageRepository } from "../repositories/message.repository";
+import type { IMessageRepository } from "../repositories/message.repository";
 import type { CreateMessageData, Message, MessageWithSender } from "../entities";
 import { MessageEventEmitter } from "./message-event.emitter";
-import { ThreadRepository } from "../repositories/thread.repository";
+import type { IThreadRepository } from "../repositories/thread.repository";
 import { AuthorizationService } from "./authorization.service";
 
 export class MessageService {
     constructor(
-        private readonly messageRepository: MessageRepository,
-        private readonly threadRepository: ThreadRepository,
+        private readonly messageRepository: IMessageRepository,
+        private readonly threadRepository: IThreadRepository,
         private readonly authorizationService: AuthorizationService,
         private readonly eventEmitter: MessageEventEmitter
     ) { }

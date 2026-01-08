@@ -1,10 +1,10 @@
-import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import type { IChannelMemberRepository } from "../repositories/channel-member.repository";
 import type { ChannelMember, ChannelRole, CreateChannelMemberData, Channel } from "../entities";
 import { AuthorizationService } from "./authorization.service";
 
 export class ChannelMemberService {
     constructor(
-        private readonly channelMemberRepository: ChannelMemberRepository,
+        private readonly channelMemberRepository: IChannelMemberRepository,
         private readonly authorizationService: AuthorizationService
     ) { }
 

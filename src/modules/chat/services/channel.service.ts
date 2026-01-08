@@ -1,10 +1,10 @@
-import { ChannelRepository } from "../repositories/channel.repository";
+import type { IChannelRepository } from "../repositories/channel.repository";
 import type { Channel, CreateChannelData, UpdateChannelData } from "../entities";
 import { ChannelNotFoundError, ChatRepositoryError } from "../errors/chat.errors";
 
 
 export class ChannelService {
-    constructor(private readonly channelRepository: ChannelRepository) { }
+    constructor(private readonly channelRepository: IChannelRepository) { }
 
     async createChannel(data: CreateChannelData): Promise<Channel> {
         try {

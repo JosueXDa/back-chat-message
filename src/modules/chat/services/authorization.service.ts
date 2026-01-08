@@ -1,4 +1,4 @@
-import { ChannelMemberRepository } from "../repositories/channel-member.repository";
+import type { IChannelMemberRepository } from "../repositories/channel-member.repository";
 import { 
     UnauthorizedChannelAccessError, 
     InsufficientPermissionsError 
@@ -6,7 +6,7 @@ import {
 
 export class AuthorizationService {
     constructor(
-        private readonly channelMemberRepository: ChannelMemberRepository
+        private readonly channelMemberRepository: IChannelMemberRepository
     ) { }
 
     /**
