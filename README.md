@@ -2,6 +2,89 @@
 
 Backend modular para una aplicación de mensajería en tiempo (casi) real construido sobre Bun + Hono. Expone endpoints REST para autenticación, gestión de usuarios y sirve como base para módulos de chat y canales.
 
+## 🚀 Instalación Rápida
+
+### Prerrequisitos
+
+- **Bun** ≥ 1.1 ([Instalar Bun](https://bun.sh))
+- **PostgreSQL** o cuenta en [Neon Database](https://neon.tech)
+- **Git** instalado
+
+### Pasos de Instalación
+
+#### 1. Clonar el repositorio
+```bash
+git clone <url-del-repositorio>
+cd back-chat-message
+```
+
+#### 2. Instalar dependencias
+```bash
+bun install
+```
+
+#### 3. Configurar variables de entorno
+
+Crea un archivo `.env` en la raíz del proyecto con el siguiente contenido:
+
+```env
+# Base de datos (PostgreSQL/Neon)
+DATABASE_URL="postgresql://user:password@host:port/database"
+
+# Better Auth (genera un secreto aleatorio seguro)
+BETTER_AUTH_SECRET="tu-secreto-aleatorio-muy-seguro"
+BETTER_AUTH_URL="http://localhost:3000/api/auth"
+
+# Cloudflare R2 (para uploads - opcional)
+R2_ACCOUNT_ID="tu-account-id"
+R2_ACCESS_KEY_ID="tu-access-key"
+R2_SECRET_ACCESS_KEY="tu-secret-key"
+R2_BUCKET_NAME="tu-bucket"
+R2_PUBLIC_URL="https://tu-bucket.r2.cloudflarestorage.com"
+```
+
+**Generar secreto seguro:**
+```bash
+bun run -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+#### 4. Ejecutar migraciones de base de datos
+```bash
+bunx drizzle-kit push
+```
+
+O si prefieres generar y aplicar migraciones manualmente:
+```bash
+bunx drizzle-kit generate
+bunx drizzle-kit migrate
+```
+
+#### 5. Iniciar servidor de desarrollo
+```bash
+bun run dev
+```
+
+El servidor estará disponible en: **http://localhost:3000**
+
+### Verificar Instalación
+
+```bash
+# Verificar que el servidor responde
+curl http://localhost:3000/api/auth
+
+# Debería retornar información de autenticación
+```
+
+### Scripts Disponibles
+
+```bash
+bun run dev      # Inicia servidor en modo desarrollo
+bun run build    # Construye para producción (si aplica)
+bun test         # Ejecuta tests
+```
+
+---
+
 ## Cambios Recientes
 
 ### v2.1.0 - Upload Directo al Backend (Diciembre 2025) 🚀
@@ -103,35 +186,41 @@ Backend modular para una aplicación de mensajería en tiempo (casi) real constr
 
 #### 🏗️ Arquitectura Resultante
 
-```
-Cliente
-  │
-  ├─ POST /api/messages ──────────────┐
-  │  { channelId, content }            │
-  │  (agrega temp-id en UI)             │
-  │                                    │
-  │  <─ 201 Created ─────────────────────┤
-  │  { id: "real-uuid", ... }           │
-  │  (reemplaza temp con real)          │
-  │                                    │
-  │                             MessageController
-  │                                    │
-  │                             MessageService
-  │                             .createMessage()
-  │                                    │
-  │                        (Guardar en BD)
-  │                                    │
-  │                        MessageEventEmitter
-  │                    emit("channel:X:message:created")
-  │                                    │
-  │                             ChatGateway
-  │                          (listener → callback)
-  │                                    │
-  │                     broadcastMessageToChannel()
-  │                                    │
-  │  <─ NEW_MESSAGE (WebSocket) ────────┤
-  │  { id: "real-uuid", ... }
-  │  (confirmación = FUENTE ÚNICA)
+```mermaid
+flowchart TD
+    Cliente[Cliente Web/Mobile]
+    
+    subgraph "HTTP Flow"
+        POST[POST /api/messages<br/>{channelId, content}<br/>+temp-id en UI]
+        Response[201 Created<br/>{id: real-uuid}<br/>reemplaza temp]
+    end
+    
+    subgraph "Backend Processing"
+        Controller[MessageController]
+        Service[MessageService<br/>.createMessage]
+        BD[(Base de Datos<br/>Guardar)]
+        Emitter[MessageEventEmitter<br/>emit channel:X:message:created]
+    end
+    
+    subgraph "WebSocket Flow"
+        Gateway[ChatGateway<br/>listener → callback]
+        Broadcast[broadcastMessageToChannel]
+        WSResponse[NEW_MESSAGE WebSocket<br/>{id: real-uuid}<br/>FUENTE ÚNICA]
+    end
+    
+    Cliente -->|1. POST| POST
+    POST --> Controller
+    Controller --> Service
+    Service --> BD
+    BD --> Emitter
+    Emitter --> Gateway
+    Gateway --> Broadcast
+    
+    Response -.->|2. HTTP Response| Cliente
+    WSResponse -.->|3. WS Confirmation| Cliente
+    
+    Controller -.-> Response
+    Broadcast -.-> WSResponse
 ```
 
 #### 📊 Métricas de Mejora
@@ -157,42 +246,48 @@ Cliente
 
 #### 🔍 Flujo Completo: Paso a Paso
 
-```
-1️⃣  Cliente: sendMessage("Hola")
-    ├─ tempId = "temp-1704110400000"
-    ├─ setMessages([..., { id: temp-... }])  ← RENDER 1 (feedback)
-    └─ POST /api/messages
-
-2️⃣  Backend: MessageController.post()
-    ├─ Valida datos
-    ├─ messageService.createMessage(data)
-    └─ return { id: "msg-f47ac10b", ... } (201)
-
-3️⃣  MessageService.createMessage()
-    ├─ messageRepository.create() → BD
-    ├─ eventEmitter.emitMessageCreated(message)
-    └─ return message
-
-4️⃣  Frontend: Recibe respuesta HTTP
-    ├─ setMessages: reemplaza temp-... → msg-f47ac10b
-    └─ RENDER 2 (actualizar ID)
-
-5️⃣  Backend: EventEmitter emite evento
-    ├─ Dispara callback en ChatGateway
-    └─ broadcastMessageToChannel() ejecuta
-
-6️⃣  Backend: ChatGateway broadcast
-    ├─ getMembersByChannelId()
-    ├─ forEach member: ws.send(NEW_MESSAGE)
-    └─ Todos los clientes reciben
-
-7️⃣  Frontend: Recibe WebSocket NEW_MESSAGE
-    ├─ handleNewMessage(payload)
-    ├─ Verifica si es confirmación de temp
-    ├─ setMessages: reemplaza/agrega
-    └─ RENDER 3 (confirmación definitiva)
-
-✅ RESULTADO: Mensaje visible, consistente, sin duplicados
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant API as MessageController
+    participant Service as MessageService
+    participant BD as Base de Datos
+    participant Emitter as EventEmitter
+    participant Gateway as ChatGateway
+    participant WS as WebSocket
+    
+    Note over Cliente: 1️⃣ sendMessage("Hola")
+    Cliente->>Cliente: tempId = temp-1704110400000
+    Cliente->>Cliente: RENDER 1 (feedback)
+    Cliente->>+API: POST /api/messages
+    
+    Note over API: 2️⃣ Valida datos
+    API->>+Service: createMessage(data)
+    
+    Note over Service: 3️⃣ Procesa mensaje
+    Service->>+BD: create(message)
+    BD-->>-Service: message guardado
+    Service->>Emitter: emitMessageCreated(message)
+    Service-->>-API: return message
+    
+    Note over API: return {id: msg-f47ac10b}
+    API-->>-Cliente: 201 Created
+    
+    Note over Cliente: 4️⃣ Recibe respuesta
+    Cliente->>Cliente: RENDER 2 (actualizar ID)
+    
+    Note over Emitter: 5️⃣ Emite evento
+    Emitter->>Gateway: channel:X:message:created
+    
+    Note over Gateway: 6️⃣ Broadcast
+    Gateway->>Gateway: getMembersByChannelId()
+    Gateway->>WS: NEW_MESSAGE a todos
+    
+    Note over Cliente: 7️⃣ Confirmación
+    WS-->>Cliente: NEW_MESSAGE event
+    Cliente->>Cliente: RENDER 3 (definitivo)
+    
+    Note over Cliente: ✅ Mensaje consistente
 ```
 
 #### 📚 Documentación Generada
@@ -286,8 +381,14 @@ bun test --coverage         # Con cobertura
 - ✅ Sincronización garantizada
 
 **Flujo**:
-```
-Client → POST /api/messages → BD → EventEmitter → Gateway → WebSocket → All Clients
+```mermaid
+flowchart LR
+    Client[Cliente] --> POST[POST /api/messages]
+    POST --> BD[(Base de Datos)]
+    BD --> EventEmitter[MessageEventEmitter]
+    EventEmitter --> Gateway[ChatGateway]
+    Gateway --> WebSocket[WebSocket]
+    WebSocket --> AllClients[Todos los Clientes]
 ```
 
 ### WebSocket (Bun + Hono)
@@ -394,29 +495,7 @@ graph TD
     G & F & K & N & P --> H
 ```
 
-## Instalación y ejecución
-1. **Prerrequisitos**: Bun ≥ 1.1, PostgreSQL (o Neon Database URL).
-2. **Variables de entorno**: cree `.env` con al menos:
-   ```env
-   DATABASE_URL="postgresql://user:password@host:port/db"
-   BETTER_AUTH_SECRET="<cadena aleatoria>"
-   BETTER_AUTH_URL="http://localhost:3000/api/auth"
-   ```
-   *(Better Auth usa `BetterAuthOptions`; establezca los secretos según sus despliegues.)*
-3. **Instalación de dependencias**:
-   ```sh
-   bun install
-   ```
-4. **Migraciones (opcional)**:
-   ```sh
-   bunx drizzle-kit generate
-   bunx drizzle-kit migrate
-   ```
-5. **Correr en desarrollo**:
-   ```sh
-   bun run dev
-   ```
-   API base: `http://localhost:3000/api`.
+
 
 ## Documentación de endpoints
 
