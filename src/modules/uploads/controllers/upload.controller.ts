@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { R2Folder, FILE_SIZE_LIMITS, ALLOWED_MIME_TYPES } from "@/lib/r2";
 import { IUploadsService, ParsedFile } from "../services/upload.service";
 import { ValidateUploadDto } from "../dtos/validate-upload.dto";
-import { authMiddleware, type AuthVariables } from "@/middlewares/auth.middleware";
+import { requireAuth, type AuthVariables } from "@/middlewares/auth.middleware";
 import { toHTTPException, NoFileProvidedError, MultipleFilesLimitError } from "../errors/upload.errors";
 
 const parseFile = async (file: File): Promise<ParsedFile> => {
@@ -30,7 +30,7 @@ export class UploadController {
     }
 
     private registerRoutes() {
-        this.router.use("/*", authMiddleware);
+        this.router.use("/*", requireAuth);
         /**
          * Sube un avatar de perfil
          * POST /uploads/profile/avatar
@@ -199,7 +199,7 @@ export class UploadController {
         this.router.post("/message/images", async (c) => {
             try {
                 const formData = await c.req.formData();
-                const files = formData.getAll("files") as File[];
+                const files = formData.getAll("files") as unknown as File[];
 
                 if (!files || files.length === 0) {
                     throw new NoFileProvidedError();
@@ -229,7 +229,7 @@ export class UploadController {
         this.router.post("/message/attachments", async (c) => {
             try {
                 const formData = await c.req.formData();
-                const files = formData.getAll("files") as File[];
+                const files = formData.getAll("files") as unknown as File[];
                 if (!files || files.length === 0) {
                     throw new NoFileProvidedError();
                 }
@@ -284,7 +284,7 @@ export class UploadController {
         this.router.post("/message/videos", async (c) => {
             try {
                 const formData = await c.req.formData();
-                const files = formData.getAll("files") as File[];
+                const files = formData.getAll("files") as unknown as File[];
 
                 if (!files || files.length === 0) {
                     throw new NoFileProvidedError();
@@ -340,7 +340,7 @@ export class UploadController {
         this.router.post("/message/audios", async (c) => {
             try {
                 const formData = await c.req.formData();
-                const files = formData.getAll("files") as File[];
+                const files = formData.getAll("files") as unknown as File[];
 
                 if (!files || files.length === 0) {
                     throw new NoFileProvidedError();

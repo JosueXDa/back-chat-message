@@ -3,17 +3,16 @@ import { UploadController } from "./controllers/upload.controller";
 import { IUploadsService } from "./services/upload.service";
 import { UploadServiceImpl } from "./services/impl/uploads.service.impl";
 
-type UploadModuleOptions = {
-    service?: IUploadsService;
-    controller?: UploadController;
-};
-
 export class UploadModule {
     public readonly controller: UploadController;
+    public readonly service: IUploadsService;
 
-    constructor(options: UploadModuleOptions = {}) {
-        const service = options.service ?? new UploadServiceImpl();
-        this.controller = options.controller ?? new UploadController(service);
+    constructor(
+        service: IUploadsService,
+        controller: UploadController
+    ) {
+        this.service = service;
+        this.controller = controller;
     }
 
     get router() {
@@ -23,4 +22,3 @@ export class UploadModule {
     }
 }
 
-export const uploadModule = new UploadModule();
