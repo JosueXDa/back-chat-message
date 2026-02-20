@@ -18,6 +18,14 @@ export const auth = betterAuth({
             verification: verifications,
         },
     }),
+    user: {
+        additionalFields: {
+            role: {
+                type: "string",
+                defaultValue: "user",
+            },
+        },
+    },
 
     databaseHooks: {
         user: {
@@ -44,7 +52,24 @@ export const auth = betterAuth({
         expo(),
     ],
 
-    trustedOrigins: ['http://localhost:3000', 'http://192.168.18.8:8081', 'http://localhost:8081'],
+    trustedOrigins: [
+        'http://localhost:3000',
+        'http://192.168.18.8:8081',
+        'http://localhost:8081',
+        'http://192.168.18.189:8081',
+        ...(process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : []),
+        ...(process.env.TRUSTED_ORIGINS ? process.env.TRUSTED_ORIGINS.split(',').map(o => o.trim()) : []),
+    ],
+
+    advanced: {
+        defaultCookieAttributes: {
+            // En producción (Cloudflare Workers, siempre HTTPS) se necesita SameSite=None; Secure
+            // para que el navegador envíe la cookie en peticiones XHR cross-origin.
+            secure: process.env.DEPLOYMENT === 'production',
+            httpOnly: true,
+            sameSite: process.env.DEPLOYMENT === 'production' ? 'none' : 'lax',
+        },
+    },
 
     emailAndPassword: {
         enabled: true,

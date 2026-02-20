@@ -5,11 +5,30 @@
     "jsxImportSource": "hono/jsx",
     "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"],
-      "@/modules/*": ["src/modules/*"],
-      "@/users/*": ["src/modules/users/*"],
-      "@/chats/*": ["src/modules/chats/*"],
-      "@/uploads/*": ["src/modules/uploads/*"],
-    }
+      "@/*": [
+        "src/*"
+      ],
+      "@/modules/*": [
+        "src/modules/*"
+      ],
+      "@/users/*": [
+        "src/modules/users/*"
+      ],
+      "@/chats/*": [
+        "src/modules/chats/*"
+      ],
+      "@/uploads/*": [
+        "src/modules/uploads/*"
+      ]
+    },
+    "types": [
+      "@cloudflare/workers-types"
+    ],
+    "lib": [
+      "esnext"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext"
   }
 }

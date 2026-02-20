@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "back-app-message",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-19",
+  // nodejs_compat allows dotenv/config and other Node.js-polyfilled APIs to work
+  // in the Workers runtime (process.env is shimmed, etc.)
+  "compatibility_flags": ["nodejs_compat"],
+
+  // ── Environment variables ──────────────────────────────────────
+  "vars": {
+    "DEPLOYMENT": "production"
+  },
+
+  // ── Durable Object bindings ────────────────────────────────────
+  "durable_objects": {
+    "bindings": [
+      {
+        // One DO instance per user — manages the long-lived WebSocket connection
+        "name": "UserSession",
+        "class_name": "UserSession"
+      },
+      {
+        // One DO instance per thread — manages subscriber list and broadcasts
+        "name": "ChatThread",
+        "class_name": "ChatThread"
+      }
+    ]
+  },
+
+  // ── Migrations ────────────────────────────────────────────────
+  // new_sqlite_classes: Creates a SQLite-backed storage for each DO class.
+  // ChatThread uses ctx.storage.put/get for subscriber persistence.
+  // UserSession uses WebSocket attachment (no storage needed), but we create
+  // it with SQLite backend for potential future use.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["UserSession", "ChatThread"]
+    }
+  ]
+}

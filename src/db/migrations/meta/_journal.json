@@ -120,6 +120,13 @@
       "when": 1767330626288,
       "tag": "0018_calm_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1771520952593,
+      "tag": "0019_freezing_william_stryker",
+      "breakpoints": true
     }
   ]
 }

@@ -3,19 +3,19 @@ import { UserRepositoryImpl } from "./repositories/impl/user.repository.impl";
 import { UserService } from "./services/user.service";
 import { UserController } from "./controllers/user.controller";
 
-type UsersModuleOptions = {
-    repository?: IUserRepository;
-    service?: UserService;
-    controller?: UserController;
-};
-
 export class UsersModule {
     public readonly controller: UserController;
+    public readonly service: UserService;
+    public readonly repository: IUserRepository;
 
-    constructor(options: UsersModuleOptions = {}) {
-        const repository = options.repository ?? new UserRepositoryImpl();
-        const service = options.service ?? new UserService(repository);
-        this.controller = options.controller ?? new UserController(service);
+    constructor(
+        repository: IUserRepository,
+        service: UserService,
+        controller: UserController
+    ) {
+        this.repository = repository;
+        this.service = service;
+        this.controller = controller;
     }
 
     get router() {
@@ -23,4 +23,3 @@ export class UsersModule {
     }
 }
 
-export const usersModule = new UsersModule();

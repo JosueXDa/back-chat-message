@@ -2,7 +2,7 @@ import { pgTable, text, uuid, timestamp, index, jsonb } from "drizzle-orm/pg-cor
 import { users } from "./users.entity";
 import { threads } from "./threads.entity";
 import { relations } from "drizzle-orm";
-import type { MessageAttachment } from "../../modules/chat/entities/message.entity";
+import type { MessageAttachment } from "../../modules/messages/entities/message.entity";
 
 export const messages = pgTable('messages', {
     id: uuid().defaultRandom().primaryKey(),

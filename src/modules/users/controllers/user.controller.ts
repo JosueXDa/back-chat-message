@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { updateUserSchema } from "../dtos/update-user.dto";
 import { UserService } from "../services/user.service";
 import { toHTTPException } from "../errors/user.errors";
-import { authMiddleware, type AuthVariables } from "../../../middlewares/auth.middleware";
+import { requireAuth, type AuthVariables } from "../../../middlewares/auth.middleware";
 
 export class UserController {
     public readonly router: Hono<{ Variables: AuthVariables }>;
@@ -16,7 +16,7 @@ export class UserController {
 
     private registerRoutes() {
 
-        this.router.get("/", authMiddleware, async (c) => {
+        this.router.get("/", requireAuth, async (c) => {
             try {
                 const users = await this.userService.getUsers();
                 return c.json(users);
@@ -25,7 +25,7 @@ export class UserController {
             }
         });
 
-        this.router.get("/:id", authMiddleware, async (c) => {
+        this.router.get("/:id", requireAuth, async (c) => {
             try {
                 const id = c.req.param("id");
                 const user = await this.userService.getUserById(id);
@@ -35,14 +35,14 @@ export class UserController {
             }
         });
 
-        this.router.patch("/:id", authMiddleware, async (c) => {
+        this.router.patch("/:id", requireAuth, async (c) => {
             try {
-                const session = c.get("session");
+                const user = c.get("user");
                 const id = c.req.param("id");
 
                 const body = await c.req.json();
                 const validatedData = updateUserSchema.parse(body);
-                const updated = await this.userService.updateUser(id, validatedData, session.user.id);
+                const updated = await this.userService.updateUser(id, validatedData, user.id);
 
                 return c.json(updated);
             } catch (error) {
@@ -50,12 +50,12 @@ export class UserController {
             }
         });
 
-        this.router.delete("/:id", authMiddleware, async (c) => {
+        this.router.delete("/:id", requireAuth, async (c) => {
             try {
-                const session = c.get("session");
+                const user = c.get("user");
                 const id = c.req.param("id");
 
-                await this.userService.deleteUser(id, session.user.id);
+                await this.userService.deleteUser(id, user.id);
                 return c.json({ message: "User deleted" });
             } catch (error) {
                 throw toHTTPException(error);

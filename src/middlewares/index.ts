@@ -1,1 +1,1 @@
-export { authMiddleware, type AuthVariables, type SessionContext } from './auth.middleware';
+export { requireAuth, requireRole, sessionMiddleware, type AuthVariables } from './auth.middleware';

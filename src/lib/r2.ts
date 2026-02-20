@@ -7,32 +7,44 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-// Validación de variables de entorno al inicio
-const validateEnvVars = () => {
-    const required = [
-        'R2_ENDPOINT', 
-        'R2_ACCESS_KEY_ID', 
-        'R2_SECRET_ACCESS_KEY', 
-        'R2_BUCKET_NAME', 
-        'R2_PUBLIC_URL'
-    ];
-    const missing = required.filter(key => !process.env[key]);
-    
-    if (missing.length > 0) {
-        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+/**
+ * Lazily-initialized S3Client for Cloudflare R2.
+ *
+ * Same reasoning as src/db/index.ts: Cloudflare Workers validates the script
+ * at upload time by executing top-level module code, at which point secrets
+ * are NOT yet injected. Calling new S3Client() or validating env vars at
+ * module level causes a 10021 validation error.
+ *
+ * The client is created on first use (inside a request handler) when all
+ * secrets are available.
+ */
+let _r2Client: S3Client | null = null;
+
+const getR2Client = (): S3Client => {
+    if (!_r2Client) {
+        const required = [
+            'R2_ENDPOINT',
+            'R2_ACCESS_KEY_ID',
+            'R2_SECRET_ACCESS_KEY',
+            'R2_BUCKET_NAME',
+            'R2_PUBLIC_URL'
+        ];
+        const missing = required.filter(key => !process.env[key]);
+        if (missing.length > 0) {
+            throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+        }
+
+        _r2Client = new S3Client({
+            region: "auto",
+            endpoint: process.env.R2_ENDPOINT,
+            credentials: {
+                accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+            },
+        });
     }
+    return _r2Client;
 };
-
-validateEnvVars();
-
-const r2Client = new S3Client({
-    region: "auto",
-    endpoint: process.env.R2_ENDPOINT,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-});
 
 /**
  * Configuración de límites de archivos
@@ -165,7 +177,7 @@ export const uploadToR2 = async (
             ContentLength: buffer.length,
         });
         
-        await r2Client.send(command);
+        await getR2Client().send(command);
         
         return {
             fileKey,
@@ -233,7 +245,7 @@ export const validateFileExists = async (fileKey: string): Promise<boolean> => {
             Bucket: process.env.R2_BUCKET_NAME!,
             Key: fileKey,
         });
-        await r2Client.send(command);
+        await getR2Client().send(command);
         return true;
     } catch (error: any) {
         // Solo retorna false si es NotFound, otros errores deberían propagarse
@@ -260,7 +272,7 @@ export const getFileMetadata = async (fileKey: string): Promise<{
             Bucket: process.env.R2_BUCKET_NAME!,
             Key: fileKey,
         });
-        const response = await r2Client.send(command);
+        const response = await getR2Client().send(command);
         return {
             size: response.ContentLength || 0,
             contentType: response.ContentType || 'application/octet-stream',
@@ -284,7 +296,7 @@ export const deleteFromR2 = async (fileKey: string): Promise<void> => {
             Bucket: process.env.R2_BUCKET_NAME!,
             Key: fileKey,
         });
-        await r2Client.send(command);
+        await getR2Client().send(command);
     } catch (error) {
         console.error('Error deleting file from R2:', error);
         throw new Error('Failed to delete file');
@@ -323,7 +335,7 @@ export const generatePresignedDownloadUrl = async (
             Key: fileKey,
         });
         
-        return await getSignedUrl(r2Client, command, { expiresIn });
+        return await getSignedUrl(getR2Client(), command, { expiresIn });
     } catch (error) {
         console.error('Error generating download URL:', error);
         throw new Error('Failed to generate download URL');
