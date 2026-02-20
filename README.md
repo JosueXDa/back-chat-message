@@ -1,675 +1,632 @@
 # Back App Message
 
-Backend modular para una aplicación de mensajería en tiempo real desplegado en **Cloudflare Workers**. Construido con Hono, Drizzle ORM y Cloudflare Durable Objects. Expone una API REST completa para autenticación, usuarios, canales, hilos (threads), mensajes y uploads, con soporte de WebSocket en tiempo real basado en la arquitectura Durable Objects de Cloudflare.
+Backend modular para una aplicación de mensajería en tiempo real desplegado en **Cloudflare Workers**. Construido con Hono, Drizzle ORM y Cloudflare Durable Objects. Expone una API REST completa para autenticación, usuarios, canales, hilos (threads), mensajes y uploads, con soporte de WebSocket en tiempo real basado en la arquitectura de Durable Objects.
 
-## 🚀 Instalación Rápida
+---
+
+## Tabla de contenidos
+
+1. [Stack tecnológico](#stack-tecnológico)
+2. [Arquitectura general](#arquitectura-general)
+3. [Durable Objects](#durable-objects)
+4. [WebSocket — flujo en tiempo real](#websocket--flujo-en-tiempo-real)
+5. [Instalación y configuración local](#instalación-y-configuración-local)
+6. [Despliegue en Cloudflare Workers](#despliegue-en-cloudflare-workers)
+7. [Variables de entorno](#variables-de-entorno)
+8. [Estructura del proyecto](#estructura-del-proyecto)
+9. [Esquema de base de datos](#esquema-de-base-de-datos)
+10. [Documentación de la API](#documentación-de-la-api)
+    - [Autenticación](#autenticación-apiauthbetter-auth)
+    - [Usuarios](#usuarios-apiusers)
+    - [Canales](#canales-apichannels)
+    - [Miembros de canal](#miembros-de-canal-apimembers)
+    - [Threads](#threads-apithreads)
+    - [Mensajes](#mensajes-apimessages)
+    - [Uploads](#uploads-apiuploads)
+    - [WebSocket](#websocket-ws)
+11. [Módulos](#módulos)
+12. [Códigos de estado HTTP](#códigos-de-estado-http)
+13. [Scripts disponibles](#scripts-disponibles)
+
+---
+
+## Stack tecnológico
+
+| Capa | Herramienta | Versión | Uso |
+|---|---|---|---|
+| Runtime / Deploy | [Cloudflare Workers](https://workers.cloudflare.com) | `compatibility_date: 2026-02-19` | Ejecución serverless en el edge |
+| Framework HTTP | [Hono](https://hono.dev) | `^4.10.6` | Ruteo, middlewares y manejo de peticiones |
+| Autenticación | [Better Auth](https://www.better-auth.com) | `^1.4.1` | Sesiones, OAuth (GitHub / Google), email+password |
+| ORM | [Drizzle ORM](https://orm.drizzle.team) + drizzle-kit | `^0.44.7` | Acceso tipado a PostgreSQL/Neon |
+| Base de datos | [Neon (serverless PostgreSQL)](https://neon.tech) | `@neondatabase/serverless ^1.0.2` | Almacenamiento persistente |
+| Tiempo real | Cloudflare Durable Objects | — | WebSocket persistente + broadcast |
+| Storage | Cloudflare R2 / AWS S3 compat. | `@aws-sdk/client-s3 ^3.958.0` | Almacenamiento de archivos |
+| Validación | [Zod](https://zod.dev) | `^4.1.13` | Esquemas DTO |
+| Dev local | [Wrangler](https://developers.cloudflare.com/workers/wrangler/) | `^3.114.0` | Emulación local y deploy |
+| Empaquetado local | [Bun](https://bun.sh) | — | Gestión de paquetes y dev con `--hot` |
+
+---
+
+## Arquitectura general
+
+```
+                        ┌─────────────────────────────────────────────┐
+                        │           Cloudflare Workers Edge             │
+                        │                                               │
+  Cliente HTTP/WS ─────►│  Hono App (src/index.ts)                     │
+                        │     │                                         │
+                        │     ├── /api/auth    → Better Auth            │
+                        │     ├── /api/users   → UsersModule            │
+                        │     ├── /api/channels → ChannelModule         │
+                        │     ├── /api/members → MemberAccessModule     │
+                        │     ├── /api/threads  → ThreadModule          │
+                        │     ├── /api/messages → MessageModule         │
+                        │     ├── /api/uploads/* → UploadModule         │
+                        │     └── /ws → UserSession DO (WebSocket)      │
+                        │                                               │
+                        │  Durable Objects                              │
+                        │     ├── UserSession (1 por usuario)           │
+                        │     └── ChatThread  (1 por thread)            │
+                        └─────────────┬───────────────────────────────-─┘
+                                      │
+                        ┌─────────────▼──────────┐
+                        │  Neon (PostgreSQL)       │
+                        │  users, channels,        │
+                        │  threads, messages, ...  │
+                        └────────────────────────-─┘
+```
+
+Cada módulo sigue el patrón **Controller → Service → Repository**:
+
+```
+src/modules/<modulo>/
+  ├── controllers/    ← Hono routes, validación HTTP, auth middleware
+  ├── services/       ← Lógica de negocio
+  ├── repositories/   ← Acceso a BD (interface + implementación Drizzle)
+  ├── dtos/           ← Esquemas Zod de entrada/salida
+  └── entities/       ← Tipos TypeScript del dominio
+```
+
+---
+
+## Durable Objects
+
+El sistema de tiempo real se implementa con dos Durable Objects registrados en `wrangler.jsonc`:
+
+### `UserSession` — uno por usuario autenticado
+
+- Acepta la conexión WebSocket larga vía **Hibernation API** (el DO puede dormir cuando el cliente está inactivo, reduciendo el costo en CPU).
+- El estado de suscripción del usuario a threads (`subscribedThreads`) se serializa en el adjunto del WebSocket (`ws.serializeAttachment`) para sobrevivir a hibernaciones.
+- Recibe peticiones HTTP internas `POST /send` desde `ChatThread` DO y reenvía el payload JSON a todos los WebSockets abiertos del usuario.
+- **Eventos del cliente aceptados:**
+  - `JOIN_THREAD` — llama a `POST /subscribe` en el `ChatThread` DO indicado
+  - `LEAVE_THREAD` — llama a `POST /unsubscribe` en el `ChatThread` DO
+- Al cerrarse la conexión (`webSocketClose`), cancela todas las suscripciones activas automáticamente.
+
+### `ChatThread` — uno por thread de conversación
+
+- Mantiene el conjunto de `subscribedUserIds` en KV storage del DO (persistido entre reinicios).
+- Acepta peticiones HTTP internas:
+  - `POST /subscribe` — añade un userId al set de suscriptores
+  - `POST /unsubscribe` — elimina un userId
+  - `POST /broadcast-message` — serializa el payload y lo entrega a cada `UserSession` DO via `Promise.allSettled`
+
+### Bindings (`wrangler.jsonc`)
+
+```jsonc
+"durable_objects": {
+  "bindings": [
+    { "name": "UserSession", "class_name": "UserSession" },
+    { "name": "ChatThread",  "class_name": "ChatThread"  }
+  ]
+},
+"migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserSession", "ChatThread"] }]
+```
+
+---
+
+## WebSocket — flujo en tiempo real
+
+```
+Cliente              Worker (Hono)          UserSession DO        ChatThread DO
+  │                       │                      │                     │
+  │── GET /ws ───────────►│                      │                     │
+  │  (sesión válida)      │── delegate WS ──────►│                     │
+  │◄── 101 Switching ─────│◄── 101 ──────────────│                     │
+  │                       │                      │                     │
+  │── JOIN_THREAD ──────────────────────────────►│── POST /subscribe ─►│
+  │◄── JOINED_THREAD ───────────────────────────│                     │
+  │                       │                      │                     │
+  │── POST /api/messages ►│  (REST + auth)        │                     │
+  │                       │── createMessage() ───────────────────────► (Neon DB)
+  │                       │── broadcast ──────────────────────────────►│
+  │                       │                      │◄── POST /send ──────│
+  │◄── NEW_MESSAGE ─────────────────────────────│                     │
+  │  (payload completo)   │                      │                     │
+```
+
+**Puntos clave:**
+- El WebSocket se establece y mantiene completamente dentro del `UserSession` DO con Hibernation API.
+- Los mensajes se crean vía REST (`POST /api/messages`). El servicio hace el broadcast al `ChatThread` DO inmediatamente tras persistir en BD.
+- El payload `NEW_MESSAGE` incluye el mensaje completo con datos del sender (`MessageWithSender`).
+- Al desconectarse, el DO limpia todas las suscripciones activas en `webSocketClose`.
+
+---
+
+## Instalación y configuración local
 
 ### Prerrequisitos
 
-- **Bun** ≥ 1.1 ([Instalar Bun](https://bun.sh))
-- **PostgreSQL** o cuenta en [Neon Database](https://neon.tech)
-- **Git** instalado
+- **Bun** ≥ 1.1 — [instalar](https://bun.sh)
+- **Cuenta Cloudflare** con Workers habilitado
+- **Neon Database** (o PostgreSQL compatible)
 
-### Pasos de Instalación
+### Pasos
 
-#### 1. Clonar el repositorio
 ```bash
+# 1. Clonar
 git clone <url-del-repositorio>
 cd back-chat-message
-```
 
-#### 2. Instalar dependencias
-```bash
+# 2. Instalar dependencias
 bun install
+
+# 3. Crear .dev.vars con las variables de entorno (ver sección Variables de entorno)
+
+# 4. Ejecutar migraciones en base de datos
+bunx drizzle-kit push
+
+# 5. Iniciar servidor local (emula Workers + Durable Objects)
+bun run cf:dev
 ```
 
-#### 3. Configurar variables de entorno
+> `bun run dev` usa `bun --hot src/index.ts` y es útil para iterar rápido, pero **no emula los Durable Objects**. Para probar WebSockets usa siempre `bun run cf:dev`.
 
-Crea un archivo `.env` en la raíz del proyecto con el siguiente contenido:
+---
 
-```env
-# Base de datos (PostgreSQL/Neon)
-DATABASE_URL="postgresql://user:password@host:port/database"
+## Despliegue en Cloudflare Workers
 
-# Better Auth (genera un secreto aleatorio seguro)
-BETTER_AUTH_SECRET="tu-secreto-aleatorio-muy-seguro"
-BETTER_AUTH_URL="http://localhost:3000/api/auth"
+```bash
+# Generar tipos de bindings (recomendado después de cambiar wrangler.jsonc)
+bun run cf:types
 
-# Cloudflare R2 (para uploads - opcional)
-R2_ACCOUNT_ID="tu-account-id"
-R2_ACCESS_KEY_ID="tu-access-key"
-R2_SECRET_ACCESS_KEY="tu-secret-key"
-R2_BUCKET_NAME="tu-bucket"
-R2_PUBLIC_URL="https://tu-bucket.r2.cloudflarestorage.com"
+# Desplegar
+bun run cf:deploy
 ```
+
+`wrangler deploy` empaqueta `src/index.ts`, sube el Worker y registra los Durable Objects según `wrangler.jsonc`.
+
+---
+
+## Variables de entorno
+
+Archivo `.dev.vars` para desarrollo local; **Secrets** en el dashboard de Cloudflare para producción.
+
+| Variable | Descripción |
+|---|---|
+| `DATABASE_URL` | Conexión PostgreSQL/Neon (`postgresql://user:pass@host/db`) |
+| `BETTER_AUTH_SECRET` | Secreto aleatorio para Better Auth (≥ 32 chars) |
+| `BETTER_AUTH_URL` | URL pública del backend (`https://<worker>.workers.dev/api/auth`) |
+| `GITHUB_CLIENT_ID` | OAuth GitHub — Client ID |
+| `GITHUB_CLIENT_SECRET` | OAuth GitHub — Client Secret |
+| `GOOGLE_CLIENT_ID` | OAuth Google — Client ID |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google — Client Secret |
+| `CORS_ORIGIN` | Origen permitido (`http://localhost:8081` en dev) |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID para R2 |
+| `R2_ACCESS_KEY_ID` | Access Key compatible S3/R2 |
+| `R2_SECRET_ACCESS_KEY` | Secret Key compatible S3/R2 |
+| `R2_BUCKET_NAME` | Nombre del bucket R2 |
+| `R2_PUBLIC_URL` | URL pública del bucket |
 
 **Generar secreto seguro:**
 ```bash
 bun run -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-#### 4. Ejecutar migraciones de base de datos
-```bash
-bunx drizzle-kit push
+---
+
+## Estructura del proyecto
+
 ```
-
-O si prefieres generar y aplicar migraciones manualmente:
-```bash
-bunx drizzle-kit generate
-bunx drizzle-kit migrate
-```
-
-#### 5. Iniciar servidor de desarrollo
-```bash
-bun run dev
-```
-
-El servidor estará disponible en: **http://localhost:3000**
-
-### Verificar Instalación
-
-```bash
-# Verificar que el servidor responde
-curl http://localhost:3000/api/auth
-
-# Debería retornar información de autenticación
-```
-
-### Scripts Disponibles
-
-```bash
-bun run dev      # Inicia servidor en modo desarrollo
-bun run build    # Construye para producción (si aplica)
-bun test         # Ejecuta tests
+back-chat-message/
+├── wrangler.jsonc              # Configuración Cloudflare Workers + DOs
+├── drizzle.config.ts           # Configuración Drizzle Kit
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── index.ts                # Bootstrap: Composition Root, mount de rutas
+│   ├── db/
+│   │   ├── index.ts            # Instancia Drizzle + @neondatabase/serverless
+│   │   ├── schema/             # Entidades Drizzle por tabla
+│   │   └── migrations/         # SQL generado por drizzle-kit
+│   ├── durable-objects/
+│   │   ├── types.ts            # Interface Env (bindings Cloudflare Workers)
+│   │   ├── user-session.do.ts  # DO: WebSocket por usuario (Hibernation API)
+│   │   └── chat-thread.do.ts   # DO: Gestión de suscriptores + broadcast
+│   ├── lib/
+│   │   ├── auth.ts             # Configuración Better Auth (OAuth, sesiones)
+│   │   └── r2.ts               # Cliente AWS SDK S3 para R2 + constantes
+│   ├── middlewares/
+│   │   ├── auth.middleware.ts  # requireAuth — extrae y valida sesión Better Auth
+│   │   └── index.ts
+│   └── modules/
+│       ├── auth/               # Proxy de rutas a Better Auth
+│       ├── users/              # CRUD usuarios + perfiles
+│       ├── channels/           # CRUD canales
+│       ├── member-access/      # Membresías + roles + AuthorizationService
+│       ├── threads/            # CRUD threads + archive/unarchive
+│       ├── messages/           # CRUD mensajes + broadcast vía ChatThread DO
+│       └── uploads/            # Upload directo a R2 (FormData)
+└── docs/
+    ├── ARCHITECTURAL_AUDIT.md
+    ├── chat-architecture-diagram.md
+    └── websocket-architecture-diagram.md
 ```
 
 ---
 
-## Cambios Recientes
+## Esquema de base de datos
 
-### v2.1.0 - Upload Directo al Backend (Diciembre 2025) 🚀
+```
+users
+  id (text PK) · name · email · emailVerified · image · createdAt · updatedAt
 
-**Migración del sistema de uploads de Presigned URLs a Upload Directo vía Backend.**
+profile
+  id (uuid PK) · userId (FK→users) · displayName · avatarUrl · bannerUrl
+  bio · age · isOnline · createdAt · updatedAt
 
-#### Cambios Principales
+channels
+  id (uuid PK) · name · description · isPrivate · imageUrl · bannerUrl
+  category · ownerId (FK→users) · createdAt
 
-| Aspecto | Antes | Ahora |
-|---------|-------|-------|
-| **Flujo** | 3 requests (presigned URL → upload R2 → validar) | 1 request (FormData al backend) |
-| **Seguridad** | Cliente sube directo a R2 | Backend valida y sube |
-| **Múltiples archivos** | No soportado | Hasta 10 archivos |
+channel_members
+  id (uuid PK) · channelId (FK→channels) · userId (FK→users)
+  role (admin|moderator|member) · joinedAt
 
-#### Archivos Modificados
+threads
+  id (uuid PK) · channelId (FK→channels CASCADE) · name · description
+  createdBy (FK→users) · isArchived · createdAt · updatedAt
 
-1. **`src/lib/r2.ts`** - Nueva función `uploadToR2()` para upload directo + constantes de límites
-2. **`src/modules/uploads/services/upload.service.ts`** - Métodos de upload por tipo de recurso
-3. **`src/modules/uploads/controllers/upload.controller.ts`** - Endpoints con FormData
-4. **`src/modules/uploads/dtos/upload-response.dto.ts`** - Nuevos DTOs de respuesta
+messages
+  id (uuid PK) · senderId (FK→users) · threadId (FK→threads CASCADE)
+  content (text) · attachments (jsonb[]) · createdAt
+```
 
-#### Nuevos Endpoints
-
-| Endpoint | Descripción |
-|----------|-------------|
-| `POST /api/uploads/profile/avatar` | Subir avatar de perfil |
-| `POST /api/uploads/profile/banner` | Subir banner de perfil |
-| `POST /api/uploads/channel/icon` | Subir icono de canal |
-| `POST /api/uploads/channel/banner` | Subir banner de canal |
-| `POST /api/uploads/message/image` | Subir imagen de mensaje |
-| `POST /api/uploads/message/attachment` | Subir adjunto de mensaje |
-| `POST /api/uploads/message/images` | Subir múltiples imágenes (hasta 10) |
-| `POST /api/uploads/message/attachments` | Subir múltiples adjuntos (hasta 10) |
-| `GET /api/uploads/info` | Obtener límites y tipos permitidos |
-
-📚 **Documentación completa:** [UPLOADS_INTEGRATION.md](./UPLOADS_INTEGRATION.md)
+> `messages.attachments` es un array JSONB de objetos `{ id, url, filename, mimeType, size, type }`.
 
 ---
 
-### v2.0.0 - Server-Driven State Synchronization (Diciembre 2025) ⭐
-
-**Implementación Completa de Server-Driven State Synchronization para garantizar consistencia de mensajes entre clientes.**
-
-#### ✅ Archivos Creados (2)
-
-1. **`src/modules/chat/services/message-event.emitter.ts`** (95 líneas)
-   - Nuevo `MessageEventEmitter` que actúa como **FUENTE ÚNICA DE VERDAD** para cambios en mensajes
-   - Extiende `EventEmitter` de Node.js para manejar suscripciones por canal
-   - Emite eventos `MESSAGE_CREATED` cuando se guardan mensajes en BD
-   - Interfaz `MessageCreatedEvent` tipada con TypeScript
-   - Métodos: `emitMessageCreated()`, `subscribeToChannel()`, `unsubscribeFromChannel()`
-
-2. **`src/modules/chat/types/websocket-messages.ts`** (85 líneas)
-   - Tipos TypeScript para todos los eventos WebSocket (cliente ↔ servidor)
-   - Interfaces para mensajes del cliente: `JoinChannelMessage`, `LeaveChannelMessage`, `SendMessageMessage`
-   - Interfaces para mensajes del servidor: `ServerNewMessageEvent`, `ServerErrorEvent`
-   - Type guards para validación en runtime
-
-#### ✅ Archivos Modificados (5)
-
-1. **`src/modules/chat/services/message.service.ts`**
-   - **Cambio**: Ahora emite evento después de guardar en BD
-   - **Patrón aplicado**: Observer Pattern
-   - Constructor recibe `MessageEventEmitter` inyectado
-   - `createMessage()` llama a `this.eventEmitter.emitMessageCreated(message)` después de guardar
-   - **Impacto**: Desacopla la lógica de broadcast del servicio
-
-2. **`src/modules/chat/controllers/message.controller.ts`**
-   - **Cambio**: Mejora en validación y logging
-   - Valida que `channelId` esté presente en POST
-   - Logs claros: `✅ [API] Message created: {id}`
-   - Respuesta 201 Created con ID real del servidor
-   - **Impacto**: Cliente recibe ID real inmediatamente para reemplazar tempId
-
-3. **`src/modules/chat/gateway/chat.gateway.ts`** (REFACTORIZACIÓN COMPLETA)
-   - **Cambio arquitectónico**: De hacer broadcast directo → Escuchar eventos
-   - Constructor recibe `MessageEventEmitter` inyectado
-   - Nuevo mapa: `userChannels: Map<string, Set<string>>` para rastrear suscripciones
-   - Nuevos event handlers: `handleJoinChannel()`, `handleLeaveChannel()`, `handleSendMessage()`
-   - Soporte para eventos WebSocket tipados: `JOIN_CHANNEL`, `LEAVE_CHANNEL`, `SEND_MESSAGE`
-   - Nueva arquitectura de listeners: `subscribeToChannel()` crea callbacks que escuchan al `MessageEventEmitter`
-   - `broadcastMessageToChannel()` es el ÚNICO lugar donde se envían eventos `NEW_MESSAGE` por WebSocket
-   - Payload de respuesta tipado con `ServerNewMessageEvent`
-   - Logs detallados: `📤 [Broadcast] Message {id} sent to user {userId}`
-   - **Impacto**: Gateway actúa como intermediario, no como iniciador
-
-4. **`src/modules/chat/chat.module.ts`**
-   - **Cambio**: Inyección de `MessageEventEmitter` como singleton
-   - Nuevo atributo público: `messageEventEmitter: MessageEventEmitter`
-   - Se pasa a `MessageService` en el constructor
-   - Configurable vía `ChatModuleOptions.messageEventEmitter`
-   - **Impacto**: Garantiza que todos los componentes usan la misma instancia
-
-5. **`src/index.ts`**
-   - **Cambio**: Instanciación de `MessageEventEmitter` como SINGLETON central
-   - Crea única instancia: `const messageEventEmitter = new MessageEventEmitter()`
-   - Se pasa a: `MessageService`, `ChatGateway`, y `ChatModule`
-   - **Impacto**: Garantiza que los eventos se propagan correctamente por todo el sistema
-
-#### 🏗️ Arquitectura Resultante
-
-```mermaid
-flowchart TD
-    Cliente[Cliente Web/Mobile]
-    
-    subgraph "HTTP Flow"
-        POST[POST /api/messages<br/>{channelId, content}<br/>+temp-id en UI]
-        Response[201 Created<br/>{id: real-uuid}<br/>reemplaza temp]
-    end
-    
-    subgraph "Backend Processing"
-        Controller[MessageController]
-        Service[MessageService<br/>.createMessage]
-        BD[(Base de Datos<br/>Guardar)]
-        Emitter[MessageEventEmitter<br/>emit channel:X:message:created]
-    end
-    
-    subgraph "WebSocket Flow"
-        Gateway[ChatGateway<br/>listener → callback]
-        Broadcast[broadcastMessageToChannel]
-        WSResponse[NEW_MESSAGE WebSocket<br/>{id: real-uuid}<br/>FUENTE ÚNICA]
-    end
-    
-    Cliente -->|1. POST| POST
-    POST --> Controller
-    Controller --> Service
-    Service --> BD
-    BD --> Emitter
-    Emitter --> Gateway
-    Gateway --> Broadcast
-    
-    Response -.->|2. HTTP Response| Cliente
-    WSResponse -.->|3. WS Confirmation| Cliente
-    
-    Controller -.-> Response
-    Broadcast -.-> WSResponse
-```
-
-#### 📊 Métricas de Mejora
-
-| Métrica | Antes | Ahora | Mejora |
-|---------|-------|-------|--------|
-| **Re-renders por mensaje** | 3-4 | 1 (definitivo) | 75% ↓ |
-| **Mensajes duplicados** | Frecuente | Nunca | 100% ↓ |
-| **Tiempo UI update** | ~1500ms | ~500ms | 66% ↓ |
-| **Acoplamiento** | Alto | Bajo | ✅ |
-| **Testabilidad** | Difícil | Fácil | ✅ |
-
-#### 🎯 Características Implementadas
-
-✅ **EventEmitter Central** - Fuente única de verdad para mensajes
-✅ **Server-Driven State** - Cliente escucha y confía en el servidor
-✅ **Desacoplamiento Total** - Componentes independientes y reutilizables
-✅ **Deduplicación Garantizada** - Sin duplicados en cliente ni servidor
-✅ **Tipos Seguros** - WebSocket messages totalmente tipados en TypeScript
-✅ **Error Handling** - Reintentos automáticos y manejo de fallos
-✅ **Documentación Exhaustiva** - 8 documentos detallados (~15,000 palabras)
-✅ **Tests Listos** - 6 test cases completos para ejecutar
-
-#### 🔍 Flujo Completo: Paso a Paso
-
-```mermaid
-sequenceDiagram
-    participant Cliente
-    participant API as MessageController
-    participant Service as MessageService
-    participant BD as Base de Datos
-    participant Emitter as EventEmitter
-    participant Gateway as ChatGateway
-    participant WS as WebSocket
-    
-    Note over Cliente: 1️⃣ sendMessage("Hola")
-    Cliente->>Cliente: tempId = temp-1704110400000
-    Cliente->>Cliente: RENDER 1 (feedback)
-    Cliente->>+API: POST /api/messages
-    
-    Note over API: 2️⃣ Valida datos
-    API->>+Service: createMessage(data)
-    
-    Note over Service: 3️⃣ Procesa mensaje
-    Service->>+BD: create(message)
-    BD-->>-Service: message guardado
-    Service->>Emitter: emitMessageCreated(message)
-    Service-->>-API: return message
-    
-    Note over API: return {id: msg-f47ac10b}
-    API-->>-Cliente: 201 Created
-    
-    Note over Cliente: 4️⃣ Recibe respuesta
-    Cliente->>Cliente: RENDER 2 (actualizar ID)
-    
-    Note over Emitter: 5️⃣ Emite evento
-    Emitter->>Gateway: channel:X:message:created
-    
-    Note over Gateway: 6️⃣ Broadcast
-    Gateway->>Gateway: getMembersByChannelId()
-    Gateway->>WS: NEW_MESSAGE a todos
-    
-    Note over Cliente: 7️⃣ Confirmación
-    WS-->>Cliente: NEW_MESSAGE event
-    Cliente->>Cliente: RENDER 3 (definitivo)
-    
-    Note over Cliente: ✅ Mensaje consistente
-```
-
-#### 📚 Documentación Generada
-
-Se generaron 8 documentos complementarios:
-
-1. **QUICKSTART.md** - Comienza en 5 minutos
-2. **VISUAL_SUMMARY.md** - Diagramas ASCII y flujos visuales  
-3. **README_IMPLEMENTATION.md** - Visión general completa
-4. **BACKEND_SERVER_DRIVEN_IMPLEMENTATION.md** - Detalles técnicos profundos
-5. **ARCHITECTURE_BEFORE_AFTER.md** - Comparativa Antes/Después
-6. **INTEGRATION_GUIDE_FRONTEND_BACKEND.md** - Frontend + Backend integración
-7. **BACKEND_TESTING_GUIDE.md** - 6 test cases listos para ejecutar
-8. **RESUMEN_IMPLEMENTACION_BACKEND.md** - Ejecutivo de cambios
-
-#### 🧪 Testing
-
-**Test Cases Implementados:**
-1. ✅ MessageService emite evento al crear
-2. ✅ ChatGateway broadcast a todos los miembros
-3. ✅ MessageController retorna ID real (201)
-4. ✅ MessageEventEmitter maneja suscripciones
-5. ✅ ConnectionManager gestiona conexiones
-6. ✅ Flujo completo integrado E2E
-
-**Ejecución:**
-```bash
-bun test                    # Todos los tests
-bun test message.service    # Tests específicos
-bun test --coverage         # Con cobertura
-```
-
-#### ✅ Validación
-
-- ✅ Código compilable (sin errores TypeScript)
-- ✅ Arquitectura limpia y desacoplada
-- ✅ Patrones aplicados (Observer, Dependency Injection, Server-Driven)
-- ✅ Documentación completa
-- ✅ Tests listos
-- ✅ Logs claros para debugging
-- ✅ **Status: 🟢 LISTO PARA PRODUCCIÓN**
-
----
-
-### v1.1.0 - WebSocket Fix (Diciembre 2025)
-**Problema**: Error `TypeError: undefined is not an object (evaluating 'websocketListeners.onMessage')` al conectar clientes al WebSocket.
-
-**Causa**: La función `createBunWebSocket` estaba deprecada en Hono 4.10.6+ y no inicializaba correctamente los event listeners.
-
-**Solución**:
-- Reemplazó `createBunWebSocket` por los imports directos `upgradeWebSocket` y `websocket` desde `hono/bun`
-- Refactorizó el callback de `upgradeWebSocket` para inicializar correctamente `ws.data` en cada evento
-- Mejoró el manejo de referencias de WebSocket dentro del callback
-
-**Archivos Modificados**:
-- `src/index.ts` - Actualización de imports y callback WebSocket
-
-**Testing**: 
-- ✅ Backend inicia sin errores
-- ✅ Usuarios se conectan correctamente vía WebSocket
-- ✅ Arquitectura de módulos intacta
-
-## Propósito del proyecto
-- Unificar autenticación (Better Auth) y perfiles de usuario en un backend ligero.
-- Proveer endpoints CRUD de usuarios listos para integrarse con un front-end React/Next.
-- Servir como base extensible para funcionalidades de mensajería (canales, mensajes, presencia) apoyándose en Drizzle ORM y Neon/PostgreSQL.
-
-## Características clave
-1. **Autenticación Better Auth** expuesta mediante `/api/auth/*` y persistida en PostgreSQL.
-2. **Gestión de usuarios + perfiles** con validaciones `zod` y capa `service/repository` (@src/modules/users/controllers/user.controller.ts#13-67).
-3. **Infraestructura de Chat en Tiempo Real** con WebSockets (Bun native), canales y mensajes persistidos (@src/modules/chat/gateway/chat.gateway.ts).
-4. **Stack totalmente tipado** con TypeScript y Bun + TSX para DX rápida.
-5. **Server-Driven State Synchronization** (v2.0.0) - El servidor es la ÚNICA FUENTE DE VERDAD para cambios en mensajes, garantizando consistencia entre clientes (@src/modules/chat/services/message-event.emitter.ts, @src/modules/chat/gateway/chat.gateway.ts).
-
-## Notas de Implementación
-
-### Server-Driven State Synchronization (v2.0.0)
-
-**Concepto**: El servidor mantiene el estado verdadero y notifica a todos los clientes de cambios. Los clientes NO originan cambios directamente, sino que escuchan al servidor.
-
-**Implementación**:
-- `MessageEventEmitter` emite eventos cuando se crean/modifican mensajes en BD
-- `ChatGateway` escucha estos eventos y hace broadcast por WebSocket
-- Clientes reciben confirmación del servidor (WebSocket) como fuente de verdad
-- Garantiza: sin duplicados, consistencia 100%, arquitectura escalable
-
-**Ventajas**:
-- ✅ Un solo canal de actualización (evita conflictos)
-- ✅ Fácil de escalar (agregar listeners es trivial)
-- ✅ Testeable (mock EventEmitter)
-- ✅ Sincronización garantizada
-
-**Flujo**:
-```mermaid
-flowchart LR
-    Client[Cliente] --> POST[POST /api/messages]
-    POST --> BD[(Base de Datos)]
-    BD --> EventEmitter[MessageEventEmitter]
-    EventEmitter --> Gateway[ChatGateway]
-    Gateway --> WebSocket[WebSocket]
-    WebSocket --> AllClients[Todos los Clientes]
-```
-
-### WebSocket (Bun + Hono)
-- Se utiliza `upgradeWebSocket` y `websocket` directamente desde `hono/bun` (el `createBunWebSocket` está deprecado).
-- Los WebSockets requieren sesión válida de Better Auth.
-- La arquitectura de gateway permite inyección de dependencias para pruebas.
-- La gestión de conexiones se realiza mediante `ConnectionManager` que mantiene un mapa de usuarios conectados.
-- **Nuevos eventos** (v2.0.0):
-  - `JOIN_CHANNEL`: Cliente se une a un canal (inicia escucha de eventos)
-  - `LEAVE_CHANNEL`: Cliente sale del canal (detiene escucha)
-  - `SEND_MESSAGE`: Cliente envía mensaje (recomendado usar HTTP POST en su lugar)
-  - `NEW_MESSAGE`: Servidor notifica nuevo mensaje (FUENTE DE VERDAD)
-
-## Stack tecnológico
-| Capa | Herramienta | Uso |
-| --- | --- | --- |
-| Runtime | [Bun](https://bun.sh) | Ejecución y gestor de paquetes.
-| Framework HTTP | [Hono](https://hono.dev) | Ruteo y middlewares ligeros (@src/index.ts#1-15).
-| Autenticación | [Better Auth](https://www.better-auth.com/docs) | Flujos auth y almacenamiento de sesiones (@src/lib/auth.ts#1-49).
-| ORM | [Drizzle ORM](https://orm.drizzle.team) + drizzle-kit | Acceso tipado a PostgreSQL/Neon (@src/db/index.ts#1-5, @drizzle.config.ts#1-11).
-| Validación | [Zod](https://zod.dev) | Esquemas DTO (`updateUserSchema`).
-| Entorno | `dotenv` | Carga de variables locales.
-
-## Arquitectura actual
-```
-src/
-├─ index.ts                 # Bootstrap de Hono y montaje de módulos
-├─ lib/auth.ts              # Configuración Better Auth + hooks
-├─ db/                      # Configuración Drizzle + esquemas
-└─ modules/
-   ├─ users/                # Controller → Service → Repository
-   └─ chat/                 # Gateway (WS) + Controllers + Services
-      ├─ gateway/           # Lógica WebSocket
-      └─ ...
-```
-
-```mermaid
-graph TD
-    %% Definición de estilos para que sea visualmente claro
-    classDef client fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef entry fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
-    classDef logic fill:#e0f2f1,stroke:#00695c,stroke-width:1px;
-    classDef data fill:#fbe9e7,stroke:#d84315,stroke-width:1px;
-    classDef db fill:#263238,stroke:#eceff1,stroke-width:2px,color:#fff;
-
-    A[Cliente HTTP / Front-end]:::client
-    H[(PostgreSQL/Neon)]:::db
-
-    subgraph "Server (Hono)"
-        B[Hono App]:::entry
-        
-        subgraph "Auth Module"
-            C[Better Auth Router]:::entry
-            G[Drizzle Adapter]:::data
-        end
-
-        subgraph "Users Module"
-            D[UsersModule/Controller]:::entry
-            E[UserService]:::logic
-            F[UserRepository]:::data
-        end
-
-        subgraph "Chat Module"
-            I[ChatGateway WS]:::entry
-            L[ChannelController]:::entry
-            R[MessageController]:::entry
-            S[ChannelMemberController]:::entry
-            
-            subgraph Services
-                J[MessageService]:::logic
-                M[ChannelService]:::logic
-                O[ChannelMemberService]:::logic
-            end
-
-            subgraph Repositories
-                K[MessageRepository]:::data
-                N[ChannelRepository]:::data
-                P[ChannelMemberRepository]:::data
-            end
-        end
-    end
-
-    %% Conexiones
-    A -->|REST| B
-    A -->|WebSocket| B
-    
-    %% Rutas desde Hono
-    B --> C
-    B --> D
-    B --> I
-    B --> L
-    B --> R
-    B --> S
-
-    %% Conexiones Internas
-    C --> G
-    D --> E --> F
-    I --> J --> K
-    L --> M --> N
-    R --> J --> K
-    S --> O --> P
-
-    %% Conexiones a DB
-    G & F & K & N & P --> H
-```
-
-
-
-## Documentación de endpoints
+## Documentación de la API
 
 ### Base URL
+
 ```
-http://localhost:3000/api
-```
-
-### Autenticación (Better Auth)
-- **Ruta**: `/api/auth/*`
-- **Métodos**: `GET`/`POST` (según endpoint).
-- Incluye registro, login email+password, sesiones, entre otros. Ver documentación oficial de Better Auth para el listado completo y payloads esperados.
-
-### Usuarios (`/api/users`)
-| Método | Ruta | Body | Respuesta exitosa | Descripción |
-| --- | --- | --- | --- | --- |
-| GET | `/api/users` | — | `200 UserWithProfile[]` | Lista todos los usuarios con su perfil (@src/modules/users/controllers/user.controller.ts#13-17).
-| GET | `/api/users/:id` | — | `200 UserWithProfile` | Busca un usuario por `id`. Devuelve `404` si no existe (@src/modules/users/controllers/user.controller.ts#19-55).
-| PATCH | `/api/users/:id` | `UpdateUserDto` | `200 UserWithProfile` | Actualiza campos del usuario o perfil. Requiere al menos un campo válido; `400` en validación fallida (@src/modules/users/controllers/user.controller.ts#30-55, @src/modules/users/dtos/update-user.dto.ts#13-40).
-| DELETE | `/api/users/:id` | — | `200 { message: "User deleted" }` | Elimina usuario y su perfil si existe. `404` si no se encuentra (@src/modules/users/controllers/user.controller.ts#57-65).
-
-**Esquema `UpdateUserDto`** (@src/modules/users/dtos/update-user.dto.ts#3-40):
-```ts
-email?: string (email)
-name?: string
-image?: string | null (URL)
-emailVerified?: boolean
-profile?: {
-  displayName?: string
-  avatarUrl?: string | null (URL)
-  bio?: string | null (<=500)
-  age?: number | null (>=0)
-  isOnline?: boolean
-}
-```
-Si no se envía ningún campo, la API responde `400` con mensaje `Provide at least one property to update`.
-
-### Chat (`/api/chats`)
-
-**Nota de Autenticación**: Todos los endpoints de Chat (canales, miembros y mensajes) requieren una sesión válida de Better Auth. La sesión se valida automáticamente en cada request y retorna `401 Unauthorized` si no es válida.
-
-#### Canales (`/api/chats/channels`)
-| Método | Ruta | Body | Respuesta exitosa | Descripción |
-| --- | --- | --- | --- | --- |
-| GET | `/api/chats/channels` | `?page=1&limit=10` | `200 { data: Channel[], meta: ... }` | Lista canales con paginación.
-| GET | `/api/chats/channels/:id` | — | `200 Channel` | Obtiene detalles de un canal específico.
-| POST | `/api/chats/channels` | `CreateChannelDto` | `200 Channel` | Crea un nuevo canal. Requiere autenticación.
-| PATCH | `/api/chats/channels/:id` | `UpdateChannelDto` | `200 Channel` | Actualiza un canal existente. Requiere autenticación.
-| DELETE | `/api/chats/channels/:id` | — | `200 { message: "Channel deleted" }` | Elimina un canal. Requiere autenticación.
-
-**Esquema `CreateChannelDto`**:
-```ts
-name: string (min 1, max 100)
-description?: string | null (max 500)
-isPrivate?: boolean (default false)
-category?: string (default 'General')
-memberIds?: string[] (optional, unique)
-ownerId?: string (optional)
+http://localhost:8787/api          # desarrollo (wrangler dev)
+https://\<worker\>.workers.dev/api   # producción
 ```
 
-#### Miembros (`/api/chats/members`)
-| Método | Ruta | Body | Respuesta exitosa | Descripción |
-| --- | --- | --- | --- | --- |
-| GET | `/api/chats/members/:channelId` | — | `200 ChannelMember[]` | Lista los miembros de un canal.
-| GET | `/api/chats/members/joined` | — | `200 Channel[]` | Lista los canales a los que el usuario autenticado se ha unido.
-| POST | `/api/chats/members` | `{ channelId: string }` | `200 ChannelMember` | El usuario autenticado se une al canal especificado.
-| DELETE | `/api/chats/members/:channelId` | — | `200 { message: "Member deleted" }` | El usuario autenticado sale del canal especificado.
-
-#### Mensajes (`/api/chats/messages`)
-| Método | Ruta | Body | Respuesta exitosa | Descripción |
-| --- | --- | --- | --- | --- |
-| GET | `/api/chats/messages/:channelId` | — | `200 Message[]` | Lista los últimos 50 mensajes del canal, ordenados por fecha descendente. Requiere autenticación.
-| POST | `/api/chats/messages` | `CreateMessageDto` | `201 Message` | Crea un nuevo mensaje en el canal especificado. El `senderId` se obtiene automáticamente de la sesión autenticada. Requiere autenticación.
-
-**Esquema `CreateMessageDto`** (@src/modules/chat/dtos/create-message.dto.ts#3-9):
-```ts
-channelId: string (UUID válido)
-content: string (min 1 carácter)
-```
-
-**Respuesta Message**:
-```ts
-{
-  id: string (UUID)
-  senderId: string
-  channelId: string (UUID)
-  content: string
-  createdAt: timestamp
-}
-```
-
-### Estados HTTP esperados
-- `200 OK`: Operación exitosa.
-- `201 Created`: (reservado para futuros endpoints de creación).
-- `400 Bad Request`: JSON inválido o violación de esquema `zod`.
-- `404 Not Found`: Usuario inexistente.
-- `500 Internal Server Error`: Error inesperado (consultar logs de Bun/Hono).
-
-### WebSockets (`/ws`)
-- **Ruta**: `/ws`
-- **Autenticación**: Requiere cookie de sesión válida de Better Auth.
-- **Eventos**:
-  - `SEND_MESSAGE`: Cliente envía mensaje.
-    ```json
-    { "type": "SEND_MESSAGE", "payload": { "channelId": "...", "content": "..." } }
-    ```
-  - `NEW_MESSAGE`: Servidor notifica nuevo mensaje.
-
-## Próximos pasos sugeridos
-- ✅ **Server-Driven State Synchronization implementado** (v2.0.0)
-  - ✅ `MessageEventEmitter` como fuente única de verdad
-  - ✅ `ChatGateway` con patrón Observer
-  - ✅ WebSocket events tipados
-  - ✅ Documentación exhaustiva (8 docs)
-- ✅ Endpoints REST CRUD de mensajes implementados (`/api/chats/messages`)
-- ✅ WebSocket integrado correctamente con `hono/bun` (sin dependencias deprecadas)
-- [ ] Integrar cliente Frontend con WebSockets y manejar confirmaciones
-- [ ] Testing automatizado (tests listos en BACKEND_TESTING_GUIDE.md)
-- [ ] Implementar Typing Indicators (usuario está escribiendo)
-- [ ] Implementar Read Receipts (confirmación de lectura)
-- [ ] Agregar paginación a endpoints de mensajes
-- [ ] Documentar scripts de despliegue (Docker, CI/CD)
-
-## Historial de Versiones
-
-### v2.0.0 - Server-Driven State Synchronization (Diciembre 2025) ⭐ **ACTUAL**
-
-**Implementación completa de Server-Driven State Synchronization para garantizar consistencia de mensajes.**
-
-**Cambios principales**:
-- ✅ Nuevo `MessageEventEmitter` - Fuente única de verdad para cambios en mensajes
-- ✅ Refactorización completa de `ChatGateway` - De iniciador a listener (Observer Pattern)
-- ✅ WebSocket events tipados - `JoinChannelMessage`, `LeaveChannelMessage`, `SendMessageMessage`, `ServerNewMessageEvent`
-- ✅ Inyección de dependencias - EventEmitter compartido como singleton
-- ✅ Documentación exhaustiva - 8 documentos detallados (~15,000 palabras)
-- ✅ 6 test cases listos para ejecutar
-
-**Archivos creados**: 2
-**Archivos modificados**: 5
-
-**Impacto**:
-- Re-renders: 3-4 → 1 (definitivo) **[75% mejora]**
-- Duplicados: Frecuentes → Nunca **[100% eliminados]**
-- Tiempo UI: ~1500ms → ~500ms **[66% mejora]**
-- Acoplamiento: Alto → Bajo **[Arquitectura limpia]**
-
-**Documentación**:
-- QUICKSTART.md - Comienza en 5 minutos
-- VISUAL_SUMMARY.md - Diagramas y flujos
-- BACKEND_SERVER_DRIVEN_IMPLEMENTATION.md - Detalles técnicos
-- ARCHITECTURE_BEFORE_AFTER.md - Comparativa
-- INTEGRATION_GUIDE_FRONTEND_BACKEND.md - Frontend + Backend
-- BACKEND_TESTING_GUIDE.md - Tests
-- RESUMEN_IMPLEMENTACION_BACKEND.md - Ejecutivo
-- README_IMPLEMENTATION.md - Visión general
-
-**Status**: 🟢 **LISTO PARA PRODUCCIÓN**
+> Todos los endpoints bajo `/api/*` aplican el middleware CORS configurado con `CORS_ORIGIN`.
 
 ---
 
-### v1.1.0 - WebSocket Fix (Diciembre 2025)
-**Problema**: Error `TypeError: undefined is not an object (evaluating 'websocketListeners.onMessage')` al conectar clientes al WebSocket.
+### Autenticación — `/api/auth` (Better Auth)
 
-**Causa**: La función `createBunWebSocket` estaba deprecada en Hono 4.10.6+ y no inicializaba correctamente los event listeners.
+Better Auth gestiona las rutas automáticamente.
 
-**Solución**:
-- Reemplazó `createBunWebSocket` por los imports directos `upgradeWebSocket` y `websocket` desde `hono/bun`
-- Refactorizó el callback de `upgradeWebSocket` para inicializar correctamente `ws.data` en cada evento
-- Mejoró el manejo de referencias de WebSocket dentro del callback
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/auth/sign-up/email` | Registro con email + contraseña |
+| `POST` | `/api/auth/sign-in/email` | Login con email + contraseña |
+| `POST` | `/api/auth/sign-out` | Cerrar sesión |
+| `GET` | `/api/auth/session` | Sesión activa del usuario |
+| `GET` | `/api/auth/sign-in/github` | OAuth GitHub |
+| `GET` | `/api/auth/sign-in/google` | OAuth Google |
 
-**Archivos Modificados**:
-- `src/index.ts` - Actualización de imports y callback WebSocket
+Ver la [documentación oficial de Better Auth](https://www.better-auth.com/docs) para el listado completo.
 
-**Testing**: 
-- ✅ Backend inicia sin errores
-- ✅ Usuarios se conectan correctamente vía WebSocket
-- ✅ Arquitectura de módulos intacta
+---
+
+### Usuarios — `/api/users`
+
+> Requiere sesión activa de Better Auth.
+
+| Método | Ruta | Body | Respuesta | Descripción |
+|---|---|---|---|---|
+| `GET` | `/api/users` | — | `200 UserWithProfile[]` | Lista todos los usuarios con perfil |
+| `GET` | `/api/users/:id` | — | `200 UserWithProfile` | Usuario por ID (`404` si no existe) |
+| `PATCH` | `/api/users/:id` | `UpdateUserDto` | `200 UserWithProfile` | Actualiza datos del usuario o perfil |
+| `DELETE` | `/api/users/:id` | — | `200 { message }` | Elimina usuario y su perfil |
+
+**`UpdateUserDto`**
+```ts
+{
+  email?: string
+  name?: string
+  image?: string | null          // URL
+  emailVerified?: boolean
+  profile?: {
+    displayName?: string
+    avatarUrl?: string | null
+    bannerUrl?: string | null
+    bio?: string | null          // máx 500 chars
+    age?: number | null          // ≥ 0
+    isOnline?: boolean
+  }
+}
+```
+> Si no se incluye ningún campo retorna `400 "Provide at least one property to update"`.
+
+---
+
+### Canales — `/api/channels`
+
+> Requiere sesión activa.
+
+| Método | Ruta | Query / Body | Respuesta | Descripción |
+|---|---|---|---|---|
+| `GET` | `/api/channels` | `?page=1&limit=10` | `200 { data, meta }` | Lista canales paginada |
+| `GET` | `/api/channels/:id` | — | `200 Channel` | Detalle de un canal |
+| `POST` | `/api/channels` | `CreateChannelDto` | `200 Channel` | Crea canal (`ownerId` = usuario autenticado) |
+| `PATCH` | `/api/channels/:id` | `UpdateChannelDto` | `200 Channel` | Actualiza canal |
+| `DELETE` | `/api/channels/:id` | — | `200 { message }` | Elimina canal |
+
+**`CreateChannelDto`**
+```ts
+{
+  name: string           // min 1, max 100
+  description?: string   // max 500
+  isPrivate?: boolean    // default false
+  category?: string      // default 'General'
+}
+```
+
+---
+
+### Miembros de canal — `/api/members`
+
+> Requiere sesión activa.
+
+| Método | Ruta | Body | Respuesta | Descripción |
+|---|---|---|---|---|
+| `GET` | `/api/members/joined` | — | `200 Channel[]` | Canales del usuario autenticado |
+| `GET` | `/api/members/:channelId` | — | `200 ChannelMember[]` | Miembros de un canal |
+| `GET` | `/api/members/:channelId/role/:userId` | — | `200 { role }` | Rol de un usuario en el canal |
+| `POST` | `/api/members` | `{ channelId }` | `201 ChannelMember` | Unirse a un canal |
+| `PATCH` | `/api/members/:channelId/:userId/role` | `{ role }` | `200 ChannelMember` | Cambiar rol (solo admins) |
+| `DELETE` | `/api/members/:channelId` | — | `200 { message }` | Salir del canal |
+
+**Roles disponibles:** `admin` | `moderator` | `member`
+
+---
+
+### Threads — `/api/threads`
+
+> Requiere sesión activa. Los threads organizan las conversaciones dentro de un canal.
+
+| Método | Ruta | Body | Respuesta | Descripción |
+|---|---|---|---|---|
+| `GET` | `/api/threads/channel/:channelId` | — | `200 Thread[]` | Todos los threads del canal |
+| `GET` | `/api/threads/channel/:channelId/active` | — | `200 Thread[]` | Solo threads no archivados |
+| `GET` | `/api/threads/:id` | — | `200 Thread` | Detalle de un thread |
+| `POST` | `/api/threads` | `CreateThreadDto` | `201 Thread` | Crear thread |
+| `PATCH` | `/api/threads/:id` | `UpdateThreadDto` | `200 Thread` | Actualizar thread |
+| `DELETE` | `/api/threads/:id` | — | `200 { message }` | Eliminar thread (creador o admin) |
+| `POST` | `/api/threads/:id/archive` | — | `200 Thread` | Archivar thread |
+| `POST` | `/api/threads/:id/unarchive` | — | `200 Thread` | Desarchivar thread |
+
+**`CreateThreadDto`**
+```ts
+{
+  channelId: string    // UUID del canal
+  name: string         // min 1, max 100
+  description?: string // max 500
+}
+```
+
+**`UpdateThreadDto`**
+```ts
+{
+  name?: string
+  description?: string
+  isArchived?: boolean
+}
+```
+
+---
+
+### Mensajes — `/api/messages`
+
+> Requiere sesión activa. Los mensajes viven dentro de un thread.
+
+| Método | Ruta | Query / Body | Respuesta | Descripción |
+|---|---|---|---|---|
+| `GET` | `/api/messages/thread/:threadId` | `?limit=50&offset=0` | `200 MessageWithSender[]` | Mensajes del thread (requiere membresía en el canal) |
+| `POST` | `/api/messages` | `CreateMessageDto` | `201 Message` | Crear mensaje + broadcast WebSocket inmediato |
+| `DELETE` | `/api/messages/:id` | — | `200 { message }` | Eliminar mensaje (autor, moderador o admin) |
+
+**`CreateMessageDto`**
+```ts
+{
+  threadId: string                      // UUID del thread
+  content: string                       // puede ser "" si hay attachments
+  attachments?: MessageAttachmentDto[]  // máx 10
+}
+// Requiere: content.length > 0 OR attachments.length > 0
+```
+
+**`MessageAttachmentDto`**
+```ts
+{
+  id: string         // UUID
+  url: string        // URL pública R2
+  filename: string   // max 255 chars
+  mimeType: string
+  size: number       // bytes
+  type: 'image' | 'document' | 'video' | 'audio'
+}
+```
+
+**Respuesta `MessageWithSender`**
+```json
+{
+  "id": "uuid",
+  "threadId": "uuid",
+  "senderId": "userId",
+  "content": "Hola mundo",
+  "attachments": [],
+  "createdAt": "2026-02-20T10:00:00.000Z",
+  "sender": {
+    "id": "userId",
+    "name": "Juan García",
+    "image": null
+  }
+}
+```
+
+> Tras persistir el mensaje en BD, el `MessageService` llama al `ChatThread` DO que hace broadcast `NEW_MESSAGE` a todos los suscriptores activos.
+
+---
+
+### Uploads — `/api/uploads`
+
+> Requiere sesión activa. El body es siempre `multipart/form-data`.
+
+| Método | Ruta | Campo FormData | Descripción |
+|---|---|---|---|
+| `POST` | `/api/uploads/profile/avatar` | `file` | Avatar de perfil |
+| `POST` | `/api/uploads/profile/banner` | `file` | Banner de perfil |
+| `POST` | `/api/uploads/channel/icon` | `file` | Icono de canal |
+| `POST` | `/api/uploads/channel/banner` | `file` | Banner de canal |
+| `POST` | `/api/uploads/message/image` | `file` | Imagen en mensaje |
+| `POST` | `/api/uploads/message/attachment` | `file` | Adjunto en mensaje |
+| `POST` | `/api/uploads/message/images` | `files` | Hasta 10 imágenes |
+| `POST` | `/api/uploads/message/attachments` | `files` | Hasta 10 adjuntos |
+| `GET` | `/api/uploads/info` | — | Límites y tipos MIME permitidos |
+
+**Respuesta (archivo único)**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://r2.dev/profile/avatars/uuid.jpg",
+    "key": "profile/avatars/uuid.jpg",
+    "size": 204800,
+    "mimeType": "image/jpeg"
+  }
+}
+```
+
+**Respuesta (múltiples archivos)**
+```json
+{
+  "success": true,
+  "data": [
+    { "url": "...", "key": "...", "size": 0, "mimeType": "..." }
+  ]
+}
+```
+
+---
+
+### WebSocket — `/ws`
+
+**Autenticación:** Cookie de sesión válida de Better Auth. El Worker valida la sesión y delega la conexión al `UserSession` DO.
+
+```
+GET /ws
+Upgrade: websocket
+Cookie: <sesión Better Auth>
+```
+
+#### Eventos cliente → servidor
+
+| Evento | Payload | Descripción |
+|---|---|---|
+| `JOIN_THREAD` | `{ threadId: string }` | Suscribirse a actualizaciones del thread |
+| `LEAVE_THREAD` | `{ threadId: string }` | Cancelar suscripción |
+
+#### Confirmaciones servidor → cliente
+
+| Evento | Payload | Descripción |
+|---|---|---|
+| `JOINED_THREAD` | `{ threadId: string }` | Confirmación de suscripción |
+| `LEFT_THREAD` | `{ threadId: string }` | Confirmación de baja |
+| `ERROR` | `{ message: string }` | Error en el procesamiento |
+
+#### Eventos de push servidor → cliente
+
+**`NEW_MESSAGE`**
+```json
+{
+  "type": "NEW_MESSAGE",
+  "payload": {
+    "id": "uuid",
+    "threadId": "uuid",
+    "senderId": "userId",
+    "content": "Hola mundo",
+    "attachments": [],
+    "createdAt": "2026-02-20T10:00:00.000Z",
+    "sender": { "id": "...", "name": "...", "image": null }
+  }
+}
+```
+
+**`DELETE_MESSAGE`**
+```json
+{
+  "type": "DELETE_MESSAGE",
+  "payload": { "messageId": "uuid", "threadId": "uuid" }
+}
+```
+
+---
+
+## Módulos
+
+| Módulo | Ruta base | Descripción |
+|---|---|---|
+| `AuthModule` | `/api/auth` | Proxy a Better Auth |
+| `UsersModule` | `/api/users` | CRUD usuarios + perfiles |
+| `ChannelModule` | `/api/channels` | CRUD canales con paginación |
+| `MemberAccessModule` | `/api/members` | Membresías, roles y control de acceso |
+| `ThreadModule` | `/api/threads` | Threads + archivo/desarchivado |
+| `MessageModule` | `/api/messages` | Mensajes con attachments y broadcast DO |
+| `UploadModule` | `/api/uploads` | Upload directo a R2 por tipo de recurso |
+
+### Composition Root
+
+`src/index.ts` instancia todas las dependencias manualmente siguiendo el patrón **Composition Root**, sin IoC container (requerido por compatibilidad con el entorno Cloudflare Workers):
+
+```
+Repositories → Services → Controllers → Modules → app.route(...)
+```
+
+---
+
+## Códigos de estado HTTP
+
+| Código | Significado |
+|---|---|
+| `200 OK` | Operación exitosa |
+| `201 Created` | Recurso creado |
+| `400 Bad Request` | JSON inválido o error de validación Zod |
+| `401 Unauthorized` | Sesión ausente o inválida |
+| `403 Forbidden` | Sin permisos suficientes |
+| `404 Not Found` | Recurso no encontrado |
+| `426 Upgrade Required` | Se esperaba conexión WebSocket |
+| `500 Internal Server Error` | Error inesperado (revisar logs del Worker) |
+
+---
+
+## Scripts disponibles
+
+```bash
+bun run dev          # Servidor local con Bun (--hot), sin emulación de DOs
+bun run cf:dev       # wrangler dev — emula Workers + Durable Objects localmente
+bun run cf:deploy    # wrangler deploy — despliega en Cloudflare
+bun run cf:types     # wrangler types — genera tipos de bindings Cloudflare
+
+bunx drizzle-kit push      # Aplica esquema directamente a la BD (dev)
+bunx drizzle-kit generate  # Genera archivos de migración SQL
+bunx drizzle-kit migrate   # Aplica migraciones generadas
+```
