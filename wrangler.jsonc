@@ -3,8 +3,6 @@
   "name": "back-app-message",
   "main": "src/index.ts",
   "compatibility_date": "2026-02-19",
-  // nodejs_compat allows dotenv/config and other Node.js-polyfilled APIs to work
-  // in the Workers runtime (process.env is shimmed, etc.)
   "compatibility_flags": ["nodejs_compat"],
 
   // ── Environment variables ──────────────────────────────────────
@@ -27,12 +25,6 @@
       }
     ]
   },
-
-  // ── Migrations ────────────────────────────────────────────────
-  // new_sqlite_classes: Creates a SQLite-backed storage for each DO class.
-  // ChatThread uses ctx.storage.put/get for subscriber persistence.
-  // UserSession uses WebSocket attachment (no storage needed), but we create
-  // it with SQLite backend for potential future use.
   "migrations": [
     {
       "tag": "v1",

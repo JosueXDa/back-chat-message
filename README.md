@@ -1,6 +1,6 @@
 # Back App Message
 
-Backend modular para una aplicación de mensajería en tiempo (casi) real construido sobre Bun + Hono. Expone endpoints REST para autenticación, gestión de usuarios y sirve como base para módulos de chat y canales.
+Backend modular para una aplicación de mensajería en tiempo real desplegado en **Cloudflare Workers**. Construido con Hono, Drizzle ORM y Cloudflare Durable Objects. Expone una API REST completa para autenticación, usuarios, canales, hilos (threads), mensajes y uploads, con soporte de WebSocket en tiempo real basado en la arquitectura Durable Objects de Cloudflare.
 
 ## 🚀 Instalación Rápida
 
