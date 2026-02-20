@@ -7,6 +7,11 @@
   // in the Workers runtime (process.env is shimmed, etc.)
   "compatibility_flags": ["nodejs_compat"],
 
+  // ── Environment variables ──────────────────────────────────────
+  "vars": {
+    "DEPLOYMENT": "production"
+  },
+
   // ── Durable Object bindings ────────────────────────────────────
   "durable_objects": {
     "bindings": [
@@ -33,13 +38,5 @@
       "tag": "v1",
       "new_sqlite_classes": ["UserSession", "ChatThread"]
     }
-  ],
-
-  // ── Environment variables (non-secret) ────────────────────────
-  // Secrets (DATABASE_URL, BETTER_AUTH_SECRET, OAuth keys, R2 keys) should
-  // be set via: npx wrangler secret put <NAME>
-  // or via the Cloudflare Workers dashboard (Settings → Variables & Secrets).
-  "vars": {
-    "CORS_ORIGIN": "http://localhost:8081"
-  }
+  ]
 }
