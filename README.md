@@ -6,27 +6,39 @@ Backend modular para una aplicación de mensajería en tiempo real desplegado en
 
 ## Tabla de contenidos
 
-1. [Stack tecnológico](#stack-tecnológico)
-2. [Arquitectura general](#arquitectura-general)
-3. [Durable Objects](#durable-objects)
-4. [WebSocket — flujo en tiempo real](#websocket--flujo-en-tiempo-real)
-5. [Instalación y configuración local](#instalación-y-configuración-local)
-6. [Despliegue en Cloudflare Workers](#despliegue-en-cloudflare-workers)
-7. [Variables de entorno](#variables-de-entorno)
-8. [Estructura del proyecto](#estructura-del-proyecto)
-9. [Esquema de base de datos](#esquema-de-base-de-datos)
-10. [Documentación de la API](#documentación-de-la-api)
-    - [Autenticación](#autenticación-apiauthbetter-auth)
-    - [Usuarios](#usuarios-apiusers)
-    - [Canales](#canales-apichannels)
-    - [Miembros de canal](#miembros-de-canal-apimembers)
-    - [Threads](#threads-apithreads)
-    - [Mensajes](#mensajes-apimessages)
-    - [Uploads](#uploads-apiuploads)
-    - [WebSocket](#websocket-ws)
-11. [Módulos](#módulos)
-12. [Códigos de estado HTTP](#códigos-de-estado-http)
-13. [Scripts disponibles](#scripts-disponibles)
+- [Back App Message](#back-app-message)
+  - [Tabla de contenidos](#tabla-de-contenidos)
+  - [Stack tecnológico](#stack-tecnológico)
+  - [Arquitectura general](#arquitectura-general)
+  - [Durable Objects](#durable-objects)
+    - [`UserSession` — uno por usuario autenticado](#usersession--uno-por-usuario-autenticado)
+    - [`ChatThread` — uno por thread de conversación](#chatthread--uno-por-thread-de-conversación)
+    - [Bindings (`wrangler.jsonc`)](#bindings-wranglerjsonc)
+  - [WebSocket — flujo en tiempo real](#websocket--flujo-en-tiempo-real)
+  - [Instalación y configuración local](#instalación-y-configuración-local)
+    - [Prerrequisitos](#prerrequisitos)
+    - [Pasos](#pasos)
+  - [Despliegue en Cloudflare Workers](#despliegue-en-cloudflare-workers)
+  - [Variables de entorno](#variables-de-entorno)
+  - [Estructura del proyecto](#estructura-del-proyecto)
+  - [Esquema de base de datos](#esquema-de-base-de-datos)
+  - [Documentación de la API](#documentación-de-la-api)
+    - [Base URL](#base-url)
+    - [Autenticación — `/api/auth` (Better Auth)](#autenticación--apiauth-better-auth)
+    - [Usuarios — `/api/users`](#usuarios--apiusers)
+    - [Canales — `/api/channels`](#canales--apichannels)
+    - [Miembros de canal — `/api/members`](#miembros-de-canal--apimembers)
+    - [Threads — `/api/threads`](#threads--apithreads)
+    - [Mensajes — `/api/messages`](#mensajes--apimessages)
+    - [Uploads — `/api/uploads`](#uploads--apiuploads)
+    - [WebSocket — `/ws`](#websocket--ws)
+      - [Eventos cliente → servidor](#eventos-cliente--servidor)
+      - [Confirmaciones servidor → cliente](#confirmaciones-servidor--cliente)
+      - [Eventos de push servidor → cliente](#eventos-de-push-servidor--cliente)
+  - [Módulos](#módulos)
+    - [Composition Root](#composition-root)
+  - [Códigos de estado HTTP](#códigos-de-estado-http)
+  - [Scripts disponibles](#scripts-disponibles)
 
 ---
 
@@ -49,31 +61,38 @@ Backend modular para una aplicación de mensajería en tiempo real desplegado en
 
 ## Arquitectura general
 
-```
-                        ┌─────────────────────────────────────────────┐
-                        │           Cloudflare Workers Edge             │
-                        │                                               │
-  Cliente HTTP/WS ─────►│  Hono App (src/index.ts)                     │
-                        │     │                                         │
-                        │     ├── /api/auth    → Better Auth            │
-                        │     ├── /api/users   → UsersModule            │
-                        │     ├── /api/channels → ChannelModule         │
-                        │     ├── /api/members → MemberAccessModule     │
-                        │     ├── /api/threads  → ThreadModule          │
-                        │     ├── /api/messages → MessageModule         │
-                        │     ├── /api/uploads/* → UploadModule         │
-                        │     └── /ws → UserSession DO (WebSocket)      │
-                        │                                               │
-                        │  Durable Objects                              │
-                        │     ├── UserSession (1 por usuario)           │
-                        │     └── ChatThread  (1 por thread)            │
-                        └─────────────┬───────────────────────────────-─┘
-                                      │
-                        ┌─────────────▼──────────┐
-                        │  Neon (PostgreSQL)       │
-                        │  users, channels,        │
-                        │  threads, messages, ...  │
-                        └────────────────────────-─┘
+```mermaid
+graph TD
+    Cliente(["Cliente HTTP / WS"])
+
+    subgraph CF["Cloudflare Workers Edge"]
+        Hono["Hono App\nsrc/index.ts"]
+
+        subgraph Routes["Rutas REST"]
+            R1["/api/auth → Better Auth"]
+            R2["/api/users → UsersModule"]
+            R3["/api/channels → ChannelModule"]
+            R4["/api/members → MemberAccessModule"]
+            R5["/api/threads → ThreadModule"]
+            R6["/api/messages → MessageModule"]
+            R7["/api/uploads → UploadModule"]
+        end
+
+        subgraph DOs["Durable Objects"]
+            US["UserSession DO\n(1 por usuario)"]
+            CT["ChatThread DO\n(1 por thread)"]
+        end
+    end
+
+    DB[("Neon / PostgreSQL\nusers · channels\nthreads · messages")]
+
+    Cliente -->|HTTP| Hono
+    Cliente -->|WebSocket /ws| US
+    Hono --> Routes
+    Hono --> US
+    US <-->|subscribe / unsubscribe| CT
+    CT -->|POST /send| US
+    Routes --> DB
 ```
 
 Cada módulo sigue el patrón **Controller → Service → Repository**:
@@ -127,22 +146,35 @@ El sistema de tiempo real se implementa con dos Durable Objects registrados en `
 
 ## WebSocket — flujo en tiempo real
 
-```
-Cliente              Worker (Hono)          UserSession DO        ChatThread DO
-  │                       │                      │                     │
-  │── GET /ws ───────────►│                      │                     │
-  │  (sesión válida)      │── delegate WS ──────►│                     │
-  │◄── 101 Switching ─────│◄── 101 ──────────────│                     │
-  │                       │                      │                     │
-  │── JOIN_THREAD ──────────────────────────────►│── POST /subscribe ─►│
-  │◄── JOINED_THREAD ───────────────────────────│                     │
-  │                       │                      │                     │
-  │── POST /api/messages ►│  (REST + auth)        │                     │
-  │                       │── createMessage() ───────────────────────► (Neon DB)
-  │                       │── broadcast ──────────────────────────────►│
-  │                       │                      │◄── POST /send ──────│
-  │◄── NEW_MESSAGE ─────────────────────────────│                     │
-  │  (payload completo)   │                      │                     │
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant W as Worker (Hono)
+    participant US as UserSession DO
+    participant CT as ChatThread DO
+    participant DB as Neon DB
+
+    C->>W: GET /ws (sesión válida)
+    W->>US: Delegar upgrade WebSocket
+    US-->>C: 101 Switching Protocols
+
+    C->>US: { type: "JOIN_THREAD", threadId }
+    US->>CT: POST /subscribe { userId }
+    CT-->>US: 200 subscribed
+    US-->>C: { type: "JOINED_THREAD", threadId }
+
+    C->>W: POST /api/messages (REST + auth)
+    W->>DB: createMessage()
+    DB-->>W: message guardado
+    W->>CT: POST /broadcast-message { type: "NEW_MESSAGE", payload }
+    CT->>US: POST /send { type: "NEW_MESSAGE", payload }
+    US-->>C: { type: "NEW_MESSAGE", payload completo }
+    W-->>C: 201 Created { id, threadId, ... }
+
+    C->>US: { type: "LEAVE_THREAD", threadId }
+    US->>CT: POST /unsubscribe { userId }
+    CT-->>US: 200 unsubscribed
+    US-->>C: { type: "LEFT_THREAD", threadId }
 ```
 
 **Puntos clave:**
