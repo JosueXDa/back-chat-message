@@ -9,12 +9,14 @@ Backend modular para una aplicación de mensajería en tiempo real desplegado en
 - [Back App Message](#back-app-message)
   - [Tabla de contenidos](#tabla-de-contenidos)
   - [Stack tecnológico](#stack-tecnológico)
+  - [Modelo de ejecución: Workers vs Deploy Tradicional](#modelo-de-ejecución-workers-vs-deploy-tradicional)
   - [Arquitectura general](#arquitectura-general)
   - [Durable Objects](#durable-objects)
     - [`UserSession` — uno por usuario autenticado](#usersession--uno-por-usuario-autenticado)
     - [`ChatThread` — uno por thread de conversación](#chatthread--uno-por-thread-de-conversación)
     - [Bindings (`wrangler.jsonc`)](#bindings-wranglerjsonc)
   - [WebSocket — flujo en tiempo real](#websocket--flujo-en-tiempo-real)
+  - [Flujos detallados por caso de uso](#flujos-detallados-por-caso-de-uso)
   - [Instalación y configuración local](#instalación-y-configuración-local)
     - [Prerrequisitos](#prerrequisitos)
     - [Pasos](#pasos)
@@ -56,6 +58,51 @@ Backend modular para una aplicación de mensajería en tiempo real desplegado en
 | Validación | [Zod](https://zod.dev) | `^4.1.13` | Esquemas DTO |
 | Dev local | [Wrangler](https://developers.cloudflare.com/workers/wrangler/) | `^3.114.0` | Emulación local y deploy |
 | Empaquetado local | [Bun](https://bun.sh) | — | Gestión de paquetes y dev con `--hot` |
+
+---
+
+## Modelo de ejecución: Workers vs Deploy Tradicional
+
+### Deploy tradicional (Node.js)
+
+Un proceso arranca una vez y vive de forma permanente en un servidor:
+
+```
+Código → npm run build → node dist/index.js  (proceso 24/7 en puerto 3000)
+```
+
+El servidor mantiene estado global en memoria, las variables de entorno se cargan al arrancar y el proceso persiste entre peticiones.
+
+### Cloudflare Workers (este proyecto)
+
+No hay servidor permanente. `wrangler deploy` **empaqueta el código y lo sube al edge de Cloudflare**. Cuando llega una petición, Cloudflare instancia el Worker, ejecuta el handler y lo destruye (o libera). No hay proceso que "viva" entre peticiones.
+
+```mermaid
+flowchart LR
+    A["Petición HTTP"] --> B["Cloudflare Edge"]
+    B --> C["Instanciar Worker"]
+    C --> D["fetch(request)"]
+    D --> E["Respuesta"]
+    E --> F["Worker liberado"]
+```
+
+Por eso en este proyecto las dependencias se inicializan de forma **lazy** dentro del handler, cuando ya existen las `env vars` inyectadas por Cloudflare:
+
+- [`src/db/index.ts`](src/db/index.ts) — `getOrCreate()` crea la instancia de Drizzle solo cuando se necesita.
+- [`src/lib/r2.ts`](src/lib/r2.ts) — `getR2Client()` inicializa el cliente S3/R2 por petición.
+
+### Workers son stateless: ¿cómo funciona el WebSocket?
+
+Sin estado entre peticiones no es posible mantener una conexión WebSocket en el Worker directamente. Aquí entran los **Durable Objects**: instancias con estado persistente y ubicación geográfica fija que pueden mantener conexiones WebSocket activas usando la **Hibernation API** (el DO puede dormir cuando el cliente está inactivo, reduciendo el costo en CPU, sin perder la conexión).
+
+| Característica | Deploy tradicional | Cloudflare Workers |
+|---|---|---|
+| Proceso | Siempre activo | Instanciado por petición |
+| Estado global en memoria | ✅ | ❌ No disponible |
+| WebSockets | Directamente en el servidor | Durable Objects + Hibernation API |
+| Variables de entorno | Al arrancar | Solo dentro del handler |
+| Despliegue | Build + reinicio del servidor | `wrangler deploy` (upload al edge) |
+| Escala | Manual / vertical | Automática en el edge global |
 
 ---
 
@@ -182,6 +229,117 @@ sequenceDiagram
 - Los mensajes se crean vía REST (`POST /api/messages`). El servicio hace el broadcast al `ChatThread` DO inmediatamente tras persistir en BD.
 - El payload `NEW_MESSAGE` incluye el mensaje completo con datos del sender (`MessageWithSender`).
 - Al desconectarse, el DO limpia todas las suscripciones activas en `webSocketClose`.
+
+---
+
+## Flujos detallados por caso de uso
+
+Este proyecto usa **un único Worker** (`src/index.ts`) que actúa como gateway para todas las peticiones. Dentro de él, Hono enruta hacia la API REST o el upgrade de WebSocket.
+
+```mermaid
+flowchart TD
+    Cliente["Cliente HTTP / WS"]
+
+    subgraph Worker["Worker: back-chat-message (src/index.ts)"]
+        Hono["Hono Router"]
+        REST["/api/* → Módulos REST"]
+        WS["/ws → Upgrade WebSocket"]
+    end
+
+    subgraph DOs["Durable Objects"]
+        US["UserSession DO\n(1 instancia por usuario)"]
+        CT["ChatThread DO\n(1 instancia por thread)"]
+    end
+
+    DB[("Neon PostgreSQL")]
+    R2[("R2 Storage")]
+
+    Cliente -->|HTTP| Hono
+    Cliente -->|GET /ws| Hono
+    Hono --> REST
+    Hono --> WS
+    WS --> US
+    REST --> DB
+    REST --> R2
+    REST -->|POST /broadcast-message| CT
+    CT -->|POST /send| US
+    US <-->|POST /subscribe\nPOST /unsubscribe| CT
+```
+
+### Flujo 1 — Conexión WebSocket
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant W as Worker (src/index.ts)
+    participant US as UserSession DO
+
+    C->>W: GET /ws (Cookie de sesión válida)
+    W->>W: auth.api.getSession() → extrae userId
+    W->>US: UserSession.idFromName(userId) → delegar upgrade
+    US-->>C: 101 Switching Protocols
+    Note over US: Conexión WS activa con Hibernation API<br/>Estado inicial: subscribedThreads = []
+```
+
+### Flujo 2 — Suscripción a un thread
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant US as UserSession DO
+    participant CT as ChatThread DO
+
+    C->>US: WS: { type: "JOIN_THREAD", threadId }
+    US->>CT: POST /subscribe { userId }
+    CT->>CT: ctx.storage.put("subscribers", [...set])
+    CT-->>US: 200 subscribed
+    US->>US: ws.serializeAttachment (añade threadId)
+    US-->>C: WS: { type: "JOINED_THREAD", threadId }
+```
+
+### Flujo 3 — Envío de mensaje y fan-out en tiempo real
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente A
+    participant W as Worker (REST)
+    participant DB as Neon DB
+    participant CT as ChatThread DO
+    participant US_A as UserSession DO (A)
+    participant US_B as UserSession DO (B)
+    participant C_B as Cliente B
+
+    C->>W: POST /api/messages { threadId, content }
+    W->>DB: INSERT message
+    DB-->>W: message guardado
+    W-->>C: 201 Created { message }
+    W->>CT: POST /broadcast-message { type: "NEW_MESSAGE", payload }
+    CT->>CT: Leer suscriptores del storage KV
+    par Fan-out (Promise.allSettled)
+        CT->>US_A: POST /send { type: "NEW_MESSAGE", ... }
+        US_A-->>C: WS: NEW_MESSAGE
+    and
+        CT->>US_B: POST /send { type: "NEW_MESSAGE", ... }
+        US_B-->>C_B: WS: NEW_MESSAGE
+    end
+```
+
+### Flujo 4 — Desconexión del cliente
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant US as UserSession DO
+    participant CT as ChatThread DO
+
+    C->>US: Cierre de conexión WebSocket
+    US->>US: webSocketClose() handler
+    loop Para cada threadId en subscribedThreads
+        US->>CT: POST /unsubscribe { userId }
+        CT->>CT: Elimina userId del storage KV
+    end
+    Note over US: DO puede hibernar<br/>(sin conexiones activas)
+```
 
 ---
 
